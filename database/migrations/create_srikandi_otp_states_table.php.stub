@@ -1,0 +1,54 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+/**
+ * State OTP Srikandi — spec §3.1.
+ *
+ * `code` disimpan sebagai HASH, bukan polos. Kode dibuat di server dan tidak
+ * pernah dikembalikan ke scraper (spec §5.1), jadi tidak ada alasan menyimpan
+ * bentuk polosnya di mana pun.
+ *
+ * `state` sengaja TIDAK punya nilai `failed`: kegagalan captcha adalah urusan
+ * scraper. Yang Bale perlu tahu hanya "kode ini sudah dipakai atau belum".
+ */
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::create('srikandi_otp_states', function (Blueprint $table) {
+            $table->uuid('id')->primary();
+
+            $table->string('purpose', 32)->default('otp');
+            $table->string('phone', 32);
+
+            $table->enum('state', ['pending', 'verified', 'consumed', 'expired'])
+                ->default('pending');
+
+            /*
+             * Terisi saat OTP dikirim, supaya balasan bisa dikaitkan ke device
+             * tertentu tanpa srikandi perlu tahu nomor device (spec §3.1).
+             */
+            $table->string('session_key', 191)->nullable();
+
+            $table->text('code_hash');
+            $table->unsignedTinyInteger('attempts')->default(0);
+            $table->timestamp('expires_at');
+            $table->timestamp('verified_at')->nullable();
+            $table->timestamp('consumed_at')->nullable();
+
+            $table->json('metadata')->nullable();
+            $table->timestamps();
+
+            $table->index(['phone', 'state']);
+            $table->index(['state', 'created_at']);
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('srikandi_otp_states');
+    }
+};

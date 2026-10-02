@@ -1,0 +1,63 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+/**
+ * Cache naskah dinas dari hasil pembacaan scraper — spec §3.2.
+ *
+ * `tahun` TIDAK nullable. Kolom ini bagian dari unique key, dan MySQL
+ * memperlakukan NULL sebagai berbeda satu sama lain — NULL tidak akan pernah
+ * dianggap duplikat, sehingga dedup gagal diam-diam. Spec §3.2 mewajibkan
+ * `0` untuk tanggal yang tidak terbaca, jadi `NOT NULL` dengan default 0.
+ *
+ * `row_hash` menyimpan hash milik Srikandi apa adanya (dengan prefix `md5:`)
+ * supaya keputusan `inserted` vs `revised` berasal dari sumber data, bukan
+ * dari tebakan backend (spec §5.4).
+ */
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::create('srikandi_naskah', function (Blueprint $table) {
+            $table->id();
+
+            $table->unsignedBigInteger('account_id');
+            $table->string('nomor_naskah', 191);
+
+            $table->unsignedSmallInteger('tahun')->default(0);
+            $table->date('tanggal_naskah')->nullable();
+
+            $table->text('hal')->nullable();
+            $table->text('ringkasan')->nullable();
+            $table->string('pengirim', 191)->nullable();
+
+            /*
+             * Semua status Srikandi adalah string datar. `status_berkas` di
+             * payload JSON bernilai `null` dan bentuk mentahnya itu yang
+             * disimpan — badge DOM yang menormalkan jadi `TIDAK ADA` bukan
+             * sumber kebenaran (spec §3.2).
+             */
+            $table->string('status_baca', 16)->nullable();
+            $table->string('status_tindak', 16)->nullable();
+            $table->string('status_berkas', 32)->nullable();
+
+            $table->string('row_hash', 64)->nullable();
+            $table->json('snapshot')->nullable();
+
+            $table->timestamp('first_seen_at');
+            $table->timestamp('last_seen_at');
+
+            $table->timestamps();
+
+            $table->unique(['account_id', 'nomor_naskah', 'tahun']);
+            $table->index(['account_id', 'last_seen_at']);
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('srikandi_naskah');
+    }
+};

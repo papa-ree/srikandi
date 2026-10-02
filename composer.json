@@ -1,0 +1,44 @@
+{
+    "name": "bale/srikandi",
+    "description": "State OTP & cache naskah Srikandi yang hanya bisa diketahui Bale",
+    "keywords": [
+        "Bale",
+        "laravel",
+        "srikandi",
+        "otp"
+    ],
+    "license": "MIT",
+    "require": {
+        "php": "^8.3",
+        "bale/api": "*",
+        "bale/wara": "*",
+        "illuminate/contracts": "^11.0||^12.0||^13.0",
+        "illuminate/http": "^11.0||^12.0||^13.0",
+        "illuminate/support": "^11.0||^12.0||^13.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Bale\\Srikandi\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Bale\\Srikandi\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Bale\\Srikandi\\SrikandiServiceProvider"
+            ],
+            "aliases": {
+                "Srikandi": "Bale\\Srikandi\\Facades\\Srikandi"
+            }
+        }
+    },
+    "config": {
+        "sort-packages": true
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true
+}
