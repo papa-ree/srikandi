@@ -5,14 +5,21 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * State OTP Srikandi — spec §3.1.
+ * State OTP Srikandi — spec §3.1 dan §5.0b.
  *
- * `code` disimpan sebagai HASH, bukan polos. Kode dibuat di server dan tidak
- * pernah dikembalikan ke scraper (spec §5.1), jadi tidak ada alasan menyimpan
- * bentuk polosnya di mana pun.
+ * 🔴 Kolom kontrak v2 (`request_id`, `opened_at`, `code_hash` nullable) sudah
+ * DILETAKAN ke sini, bukan di migration aditif terpisah. Alasannya: satu tabel
+ * = satu migration, supaya `migrate:fresh` dan instalasi baru langsung mendapat
+ * bentuk akhir tanpa harus menunggu migration kedua.
  *
- * `state` sengaja TIDAK punya nilai `failed`: kegagalan captcha adalah urusan
- * scraper. Yang Bale perlu tahu hanya "kode ini sudah dipakai atau belum".
+ * Yang TIDAK boleh dilakukan ke file ini sesudah dipakai di instalasi nyata:
+ * menambah kolom baru. Itu tetap butuh migration aditif terpisah — migration
+ * yang sudah tercatat di tabel `migrations` tidak akan dieksekusi ulang, jadi
+ * kolom barunya hanya ada di instalasi baru dan hilang diam-diam di yang lama.
+ * Mengubah definisi di sini hanya aman untuk instalasi yang belum pernah
+ * menjalankan file ini (fresh, atau belum di-deploy).
+ *
+ * Rincian tiap kolom ada di `docs/srikandi.md` §3.1 dan §5.0b.
  */
 return new class extends Migration
 {
@@ -20,6 +27,16 @@ return new class extends Migration
     {
         Schema::create('srikandi_otp_states', function (Blueprint $table) {
             $table->uuid('id')->primary();
+
+            /*
+             * Identitas jendela, bukan nomor.
+             *
+             * NULLABLE + UNIQUE, bukan NOT NULL: record lama tidak punya
+             * request_id dan harus tetap bisa dibaca lewat `phone` (jalur
+             * kompatibilitas). Pada MySQL banyak NULL di unique index tetap
+             * dianggap berbeda, jadi baris legacy tidak saling bertabrakan.
+             */
+            $table->uuid('request_id')->nullable()->unique();
 
             $table->string('purpose', 32)->default('otp');
             $table->string('phone', 32);
@@ -33,7 +50,28 @@ return new class extends Migration
              */
             $table->string('session_key', 191)->nullable();
 
-            $table->text('code_hash');
+            /*
+             * Batas bawah jendela baca.
+             *
+             * `otp-pending` hanya mengembalikan pesan yang masuk SEJAK jendela
+             * dibuka. Tanpa ini, scraper akan membaca ulang kode dari siklus
+             * sebelumnya — persis bug yang membuat scraper mengambil OTP Bale
+             * yang basi lalu gagal login.
+             */
+            $table->timestamp('opened_at')->nullable();
+
+            /*
+             * 🔴 NULLABLE, bukan NOT NULL: jendela listening tidak punya kode.
+             *
+             * Kode OTP yang benar datang dari Srikandi, bukan dari Bale, jadi
+             * `code_hash` NULL adalah kondisi normal — bukan data rusak.
+             *
+             * Bentuk sebelumnya NOT NULL dan diubah lewat `change()` pada migration
+             * aditif. Sekarang sudah langsung nullable sejak create, jadi tidak
+             * ada `MODIFY` yang perlu diputar di driver mana pun.
+             */
+            $table->text('code_hash')->nullable();
+
             $table->unsignedTinyInteger('attempts')->default(0);
             $table->timestamp('expires_at');
             $table->timestamp('verified_at')->nullable();

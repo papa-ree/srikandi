@@ -8,6 +8,13 @@
         "otp"
     ],
     "license": "MIT",
+    "authors": [
+        {
+            "name": "Papa Ree",
+            "email": "ricky.romdhoni@gmail.com",
+            "role": "Developer"
+        }
+    ],
     "require": {
         "php": "^8.3",
         "bale/api": "*",
