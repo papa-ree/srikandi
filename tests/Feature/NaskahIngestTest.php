@@ -1,9 +1,9 @@
 <?php
 
 use Bale\Srikandi\Models\SrikandiNaskah;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
-use Illuminate\Foundation\Testing\RefreshDatabase;
 
 require_once __DIR__.'/../helpers.php';
 

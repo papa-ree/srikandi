@@ -94,9 +94,9 @@ function scraperToken(array $scopes = [
     'srikandi.otp.read',
     'srikandi.otp.write',
     'srikandi.naskah.write',
-], ?string $baleId = null): array
+]): array
 {
-    return app(TokenManager::class)->issue('Scraper Srikandi', $scopes, baleId: $baleId);
+    return app(TokenManager::class)->issue('Scraper Srikandi', $scopes);
 }
 
 /**
@@ -104,11 +104,9 @@ function scraperToken(array $scopes = [
  *
  * @return array<string, string>
  */
-function asScraper(?string $plain = null, ?string $baleId = null): array
+function asScraper(?string $plain = null): array
 {
-    return [
-        'Authorization' => 'Bearer '.($plain ?? scraperToken(baleId: $baleId)['plain']),
-    ];
+    return ['Authorization' => 'Bearer '.($plain ?? scraperToken()['plain'])];
 }
 
 /**
