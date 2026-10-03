@@ -41,7 +41,7 @@ return [
                     'status' => 'done',
                     'meta' => '§2–§3',
                     'note' => 'Tervalidasi di engine sungguhan: `tahun` NOT NULL default 0 dan '
-                        .'unique key (account_id, nomor_naskah, tahun).',
+                        .'unique key (bale_id, nomor_naskah, tahun).',
                 ],
                 [
                     'label' => '4 endpoint scraper dengan scope terpisah',

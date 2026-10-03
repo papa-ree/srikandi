@@ -32,7 +32,7 @@ $endpoints = [
     ['post', '/api/v1/srikandi/otp-request', ['phone' => '628123456789']],
     ['get', '/api/v1/srikandi/otp-pending?phone=628123456789', []],
     ['post', '/api/v1/srikandi/otp-verify', ['phone' => '628123456789', 'code' => '123456']],
-    ['post', '/api/v1/srikandi/naskah-dinas', ['account_id' => 1, 'items' => []]],
+    ['post', '/api/v1/srikandi/naskah-dinas', ['bale_id' => baleUuid(), 'items' => []]],
 ];
 
 describe('autentikasi & otorisasi endpoint (spec §7)', function () use ($endpoints) {
@@ -100,7 +100,7 @@ describe('pemisahan scope (spec §7)', function () {
             ->assertForbidden();
 
         $this->postJson('/api/v1/srikandi/naskah-dinas', [
-            'account_id' => 1, 'items' => [],
+            'bale_id' => baleUuid(), 'items' => [],
         ], asScraper($plain))->assertForbidden();
     });
 
@@ -174,7 +174,7 @@ describe('penolakan data tidak valid', function () {
         $items = array_fill(0, 501, ['nomor' => 'X']);
 
         $this->postJson('/api/v1/srikandi/naskah-dinas', [
-            'account_id' => 1, 'items' => $items,
+            'bale_id' => baleUuid(), 'items' => $items,
         ], asScraper())->assertStatus(422);
     });
 

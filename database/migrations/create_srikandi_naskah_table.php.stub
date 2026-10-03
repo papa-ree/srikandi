@@ -23,6 +23,14 @@ return new class extends Migration
         Schema::create('srikandi_naskah', function (Blueprint $table) {
             $table->id();
 
+            // ⚠️ Kolom ini langsung dikonversi jadi `bale_id` (UUID) oleh
+            // `replace_account_id_with_bale_id_in_srikandi_naskah_table`.
+            //
+            // Sengaja TIDAK diubah di sini. Installed yang sudah jalan perlu
+            // migrasi konversi; kalau stub create ikut diubah, `down()` dari
+            // migrasi konversi tidak bisa tahu apakah ia perlu mengembalikan
+            // `account_id` atau membiarkan `bale_id` apa adanya - dan itu
+            // akan merusak skema fresh install secara diam-diam.
             $table->unsignedBigInteger('account_id');
             $table->string('nomor_naskah', 191);
 

@@ -73,6 +73,23 @@ function srikandiSetup(): Closure
 }
 
 /**
+ * UUID `bale_lists.id` untuk test.
+ *
+ * 🔴 `bale_id` bukan lagi integer bebas. Nilainya harus UUID karena kolomnya
+ * menunjuk `bale_lists.id`, dan test ingest memakai UUID yang TIDAK ada di tabel
+ * itu — sengaja. `bale_lists` milik CMS dan bukan bagian darilingkungan test
+ * srikandi, jadi FK tidak dideklarasikan; yang diuji di sini adalah kontrak
+ * payload, bukan integritas referensial.
+ */
+function baleUuid(int $seed = 1): string
+{
+    return sprintf(
+        '00000000-0000-4000-8000-%012d',
+        $seed
+    );
+}
+
+/**
  * Token scraper dengan scope yang diminta.
  *
  * @param  list<string>  $scopes
@@ -82,9 +99,9 @@ function scraperToken(array $scopes = [
     'srikandi.otp.read',
     'srikandi.otp.write',
     'srikandi.naskah.write',
-]): array
+], ?string $baleId = null): array
 {
-    return app(TokenManager::class)->issue('Scraper Srikandi', $scopes);
+    return app(TokenManager::class)->issue('Scraper Srikandi', $scopes, baleId: $baleId);
 }
 
 /**
@@ -92,9 +109,11 @@ function scraperToken(array $scopes = [
  *
  * @return array<string, string>
  */
-function asScraper(?string $plain = null): array
+function asScraper(?string $plain = null, ?string $baleId = null): array
 {
-    return ['Authorization' => 'Bearer '.($plain ?? scraperToken()['plain'])];
+    return [
+        'Authorization' => 'Bearer '.($plain ?? scraperToken(baleId: $baleId)['plain']),
+    ];
 }
 
 /**

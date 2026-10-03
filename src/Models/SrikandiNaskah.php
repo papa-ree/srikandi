@@ -12,7 +12,7 @@ use Illuminate\Database\Eloquent\Model;
  * berulang ke Srikandi hanya untuk tahu "naskah ini sudah pernah masuk".
  *
  * @property int $id
- * @property int $account_id
+ * @property string $bale_id
  * @property string $nomor_naskah
  * @property int $tahun
  * @property string|null $tanggal_naskah
@@ -32,7 +32,7 @@ class SrikandiNaskah extends Model
     protected $table = 'srikandi_naskah';
 
     protected $fillable = [
-        'account_id',
+        'bale_id',
         'nomor_naskah',
         'tahun',
         'tanggal_naskah',
@@ -65,7 +65,7 @@ class SrikandiNaskah extends Model
     public function dedupKey(): string
     {
         return implode('|', [
-            $this->account_id,
+            $this->bale_id,
             $this->nomor_naskah,
             $this->tahun,
         ]);
