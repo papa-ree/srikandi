@@ -18,6 +18,8 @@ use Bale\Api\Services\TokenManager;
 use Bale\Srikandi\Models\SrikandiOtpState;
 use Bale\Srikandi\SrikandiServiceProvider;
 use Bale\Srikandi\Support\OtpCode;
+use Bale\Wara\Models\WaraClient;
+use Bale\Wara\Models\WaraRoute;
 use Bale\Wara\Models\WaraSession;
 use Bale\Wara\WaraServiceProvider;
 use Illuminate\Support\Facades\Http;
@@ -98,11 +100,19 @@ function asScraper(?string $plain = null): array
 /**
  * Device yang siap kirim, supaya `sendOtp` lolos resolusi (wara PRD §6.5).
  *
- * 🔴 `purpose` SENGAJA tidak ada di `WaraSession::$fillable` — hanya admin yang
- * boleh mengisinya. Kalau diisi lewat `create()`, nilainya dibuang diam-diam,
- * device tidak cocok dengan `where('purpose', ...)`, dan resolutions jatuh ke
- * `WARA_DEFAULT_DEVICE_ID` milik `.env` lokal. Gejalanya `otp_delivery_failed`
- * padahal device siap.
+ * 🔴 Penugasan purpose TIDAK LAGI di `WaraSession`.
+ *
+ * `wara_sessions.purpose` sudah dihapus. Kolom itu unik GLOBAL, jadi hanya
+ * satu device di seluruh instalasi yang boleh punya satu purpose — menambah
+ * klien kedua untuk `notifikasi` jadi mustahil. Penugasan pindah ke
+ * `wara_routes` dengan `UNIQUE (client_id, purpose)`.
+ *
+ * Helper lama menulis `forceFill(['purpose' => ...])`, dan itu gagal dengan
+ * `table wara_sessions has no column named purpose` — bukan karena logikanya
+ * salah, tapi karena kolomnya sudah tidak ada. 26 test gagal karena itu.
+ *
+ * Jadi sekarang penugasan lewat client + route, sesuai skema yang sebenarnya.
+ * Device sendiri tetap di `WaraSession`, hanya "purpose-nya siapa" yang pindah.
  *
  * `$jid` default-nya nomor realistis (12 digit). Nomor pendek seperti `628111`
  * membuat jalur penyamaran `phone_masked` mengambil cabang "sembunyikan penuh",
@@ -123,7 +133,39 @@ function seedSendableDevice(
         'last_seen_at' => now(),
     ]);
 
-    $session->forceFill(['purpose' => $purpose])->save();
+    $session->save();
+
+    if ($purpose === null) {
+        return;
+    }
+
+    $client = WaraClient::query()->firstOrCreate(
+        ['name' => 'client-test'],
+        ['type' => WaraClient::TYPE_SERVICE, 'is_active' => true],
+    );
+
+    // `client_id` sengaja di luar `WaraRoute::$fillable`, jadi harus lewat
+    // forceFill - sama seperti test di package wara sendiri yang memakai
+    // `makeRouteDeviceResolutionTest()`. Kalau diisi lewat `create()`, nilainya
+    // dibuang diam-diam dan SQLite protes `NOT NULL constraint failed:
+    // wara_routes.client_id`.
+    $route = WaraRoute::query()
+        ->where('client_id', $client->id)
+        ->where('purpose', $purpose)
+        ->first();
+
+    if ($route === null) {
+        $route = new WaraRoute;
+        $route->forceFill([
+            'client_id' => $client->id,
+            'purpose' => $purpose,
+        ]);
+    }
+
+    $route->forceFill([
+        'device_id' => $deviceId,
+        'outbound_enabled' => true,
+    ])->save();
 }
 
 /**

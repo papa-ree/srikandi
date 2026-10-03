@@ -7,6 +7,7 @@ use Bale\Srikandi\Models\SrikandiOtpState;
 use Bale\Srikandi\Support\OtpCode;
 use Bale\Srikandi\Support\OtpPhone;
 use Bale\Wara\Exceptions\WaraException;
+use Bale\Wara\Models\WaraRoute;
 use Bale\Wara\Models\WaraSession;
 use Bale\Wara\WaraManager;
 use Illuminate\Support\Facades\DB;
@@ -128,10 +129,23 @@ class OtpService
     protected function resolveTargetPhone(?string $rawPhone, string $purpose): array
     {
         if ($rawPhone !== null && trim($rawPhone) !== '') {
-            return [$this->requirePhone($rawPhone), null];
+            /*
+             * Nomor eksplisit tetap dipakai apa adanya, tapi device tetap
+             * ikut di-resolve.
+             *
+             * Device ini hanya dipakai untuk log di jalur ini - `openWindow()`
+             * tidak mengirim apa pun. Yang mengirim adalah `requestOtp()`, dan
+             * dia me-resolve sendiri lewat `sessionForPurpose()`.
+             *
+             * 🔴 `SrikandiOtpState` tidak punya kolom `device_id`, jadi device
+             * TIDAK bisa diambil dari state. Selama ini device hasil resolusi
+             * dibuang, dan `deliver()` berakhir memakai
+             * `WARA_DEFAULT_DEVICE_ID`.
+             */
+            return [$this->requirePhone($rawPhone), $this->sessionForPurpose($purpose)?->device_id];
         }
 
-        $session = WaraSession::query()->where('purpose', $purpose)->first();
+        $session = $this->sessionForPurpose($purpose);
 
         if ($session === null) {
             throw SrikandiException::noOtpDevice(
@@ -179,6 +193,49 @@ class OtpService
     }
 
     /**
+     * Device yang melayani sebuah purpose, dicari lewat `wara_routes`.
+     *
+     * 🔴 `wara_sessions.purpose` SUDAH DIHAPUS. Kolom itu unik global, jadi
+     * hanya satu device di seluruh instalasi yang boleh punya satu purpose.
+     * jadi menambah klien kedua untuk `notifikasi` mustahil. Sekarang
+     * penugasannya pindah ke `wara_routes` dengan `UNIQUE (client_id, purpose)`.
+     *
+     * Kode lama masih men-query kolom yang sudah hilang:
+     *
+     *     WaraSession::query()->where('purpose', $purpose)->first();
+     *
+     * Itu `Column not found: Unknown column 'purpose'` - jadi `POST
+     * /api/v1/srikandi/otp-request` balas **500**, bukan 422 `no_otp_device`
+     * yang Pesan actionable itu. Terverifikasi dengan query langsung ke DB.
+     *
+     * 🔴 Batasnya, dan sengaja dicatat: pemetaan `purpose -> device` sekarang
+     * tidak lagi global, jadi "device mana untuk purpose ini" bisa lebih dari
+     * satu jawaban. Untuk sekarang yang diambil adalah route PERTAMA (paling
+     * lama). Itu terjemahan paling jujur dari semantik lama, dan cukup untuk
+     * jalur OTP yang memang akan di-retire.
+     *
+     * Kalau nanti butuh client yang ditentukan, `DeviceRouter` sudah
+     * menyediakannya - tapi itu butuh keputusan identitas client (lihat
+     * `docs/wara/PROMPT-REFACTOR.md`), jadi tidak ditebak di sini.
+     */
+    protected function sessionForPurpose(string $purpose): ?WaraSession
+    {
+        $route = WaraRoute::query()
+            ->where('purpose', $purpose)
+            ->where('outbound_enabled', true)
+            ->orderBy('created_at')
+            ->first();
+
+        if ($route === null) {
+            return null;
+        }
+
+        return WaraSession::query()
+            ->where('device_id', $route->device_id)
+            ->first();
+    }
+
+    /**
      * Buang sufiks JID WhatsApp.
      */
     protected function stripJid(string $jid): string
@@ -206,6 +263,7 @@ class OtpService
     public function requestOtp(string $rawPhone, ?string $purpose = null, ?string $sessionKey = null): SrikandiOtpState
     {
         $phone = $this->requirePhone($rawPhone);
+        $purpose = $this->resolvePurpose($purpose);
 
         $existing = $this->findVerifiableByPhone($phone);
 
@@ -217,7 +275,7 @@ class OtpService
 
         $state = new SrikandiOtpState([
             'request_id' => (string) Str::uuid(),
-            'purpose' => $this->resolvePurpose($purpose),
+            'purpose' => $purpose,
             'phone' => $phone,
             'state' => SrikandiOtpState::STATE_PENDING,
             'session_key' => $sessionKey,
@@ -233,7 +291,17 @@ class OtpService
 
         $state->save();
 
-        $this->deliver($state, $code);
+        // 🔴 Jalur lama ini tidak pernah resolve device, padahal
+        // `openWindow()` melakukannya. Akibatnya `deliver()` memanggil
+        // `sendOtp()` tanpa `deviceId` dan `resolveDevice()` jatuh ke
+        // `WARA_DEFAULT_DEVICE_ID` - yang kosong di test dan sering salah di
+        // produksi. Hasilnya 422 `otp_delivery_failed` padahal device
+        // `purpose=otp` ada dan siap kirim.
+        //
+        // Device diambil dari route purpose yang sama seperti `openWindow()`,
+        // lalu diteruskan sebagai argumen - bukan disimpan di state, karena
+        // `SrikandiOtpState` tidak punya kolom `device_id`.
+        $this->deliver($state, $code, $this->sessionForPurpose($purpose)?->device_id);
 
         return $state;
     }
@@ -249,13 +317,21 @@ class OtpService
      *
      * @throws SrikandiException
      */
-    protected function deliver(SrikandiOtpState $state, string $code): void
+    protected function deliver(SrikandiOtpState $state, string $code, ?string $deviceId = null): void
     {
         try {
             $this->wara->sendOtp(
                 $state->phone,
                 $code,
                 $state->purpose,
+                // 🔴 Device hasil resolusi HARUS diteruskan di sini.
+                //
+                // `SrikandiOtpState` tidak punya kolom `device_id` - nilainya
+                // selalu `null` - jadi device tidak boleh diambil dari state.
+                // Kalau diteruskan `null`, `resolveDevice()` memakai
+                // `WARA_DEFAULT_DEVICE_ID`, yang di test selalu kosong, dan
+                // hasilnya 422 padahal device `purpose=otp` ada dan siap.
+                $deviceId,
                 sessionKey: $state->session_key,
             );
         } catch (\Throwable $e) {

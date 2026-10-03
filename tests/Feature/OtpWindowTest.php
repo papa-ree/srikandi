@@ -4,6 +4,8 @@ use Bale\Srikandi\Models\SrikandiOtpState;
 use Bale\Srikandi\Support\PhoneMask;
 use Bale\Wara\Events\WaraIncomingMessage;
 use Bale\Wara\Models\WaraLog;
+use Bale\Wara\Models\WaraClient;
+use Bale\Wara\Models\WaraRoute;
 use Bale\Wara\Models\WaraSession;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
@@ -100,8 +102,24 @@ describe('kontrak v2: jendela listening (spec §5.0b)', function () {
             'last_seen_at' => now(),
         ]);
 
-        // `purpose` tidak ada di $fillable, jadi harus lewat forceFill.
-        $session->forceFill(['purpose' => 'otp'])->save();
+        $session->save();
+
+        // 🔴 Penugasan purpose tidak lagi ke `WaraSession`. Kolom itu unik
+        // global dan sudah dihapus; sekarang ada di `wara_routes` dengan
+        // `UNIQUE (client_id, purpose)`. `client_id` di luar `$fillable`, jadi
+        // lewat `forceFill`.
+        $client = WaraClient::query()->firstOrCreate(
+            ['name' => 'client-offline'],
+            ['type' => WaraClient::TYPE_SERVICE, 'is_active' => true],
+        );
+
+        $route = new WaraRoute;
+        $route->forceFill([
+            'client_id' => $client->id,
+            'purpose' => 'otp',
+            'device_id' => 'dev-offline',
+            'outbound_enabled' => true,
+        ])->save();
 
         $response = $this->postJson('/api/v1/srikandi/otp-request', [
             'purpose' => 'otp',
