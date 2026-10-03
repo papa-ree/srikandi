@@ -37,11 +37,12 @@ return [
             'title' => 'Fase implementasi',
             'items' => [
                 [
-                    'label' => 'Kerangka package + 2 migration',
+                    'label' => 'Kerangka package + 2 migration (digabung)',
                     'status' => 'done',
                     'meta' => '§2–§3',
-                    'note' => 'Tervalidasi di engine sungguhan: `tahun` NOT NULL default 0 dan '
-                        .'unique key (bale_id, nomor_naskah, tahun).',
+                    'note' => 'Tervalidasi di engine sungguhan: PK UUID, `tahun` NOT NULL default 0, '
+                        .'dan unique key (nomor_naskah, tahun). Tidak ada `bale_id` — '
+                        .'tabel ini tidak berhubungan dengan katalog tenant.',
                 ],
                 [
                     'label' => '4 endpoint scraper dengan scope terpisah',

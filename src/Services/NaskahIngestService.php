@@ -21,16 +21,13 @@ use Illuminate\Support\Facades\DB;
 class NaskahIngestService
 {
     /**
-     * @param  string  $baleId  UUID `bale_lists.id` - identitas organisasi penyewa
      * @param  iterable<array<string, mixed>>  $items  isi `data[]` dari Srikandi
      * @return array{inserted: int, revised: int, unchanged: int, skipped: int}
      *
      * @throws SrikandiException
      */
-    public function ingest(string $baleId, iterable $items): array
+    public function ingest(iterable $items): array
     {
-        $baleId = $this->requireBaleId($baleId);
-
         $counts = ['inserted' => 0, 'revised' => 0, 'unchanged' => 0, 'skipped' => 0];
 
         foreach ($items as $item) {
@@ -40,7 +37,7 @@ class NaskahIngestService
                 continue;
             }
 
-            $row = $this->mapItem($baleId, $item);
+            $row = $this->mapItem($item);
 
             if ($row === null) {
                 $counts['skipped']++;
@@ -70,7 +67,6 @@ class NaskahIngestService
     protected function persist(array $row): string
     {
         $existing = SrikandiNaskah::query()
-            ->where('bale_id', $row['bale_id'])
             ->where('nomor_naskah', $row['nomor_naskah'])
             ->where('tahun', $row['tahun'])
             ->lockForUpdate()
@@ -125,7 +121,7 @@ class NaskahIngestService
      * @param  array<string, mixed>  $item
      * @return array<string, mixed>|null
      */
-    protected function mapItem(string $baleId, array $item): ?array
+    protected function mapItem(array $item): ?array
     {
         $nomor = $this->stringOrNull($item['nomor'] ?? $item['nomor_naskah'] ?? null);
 
@@ -136,7 +132,6 @@ class NaskahIngestService
         $tanggal = $item['tanggal'] ?? null;
 
         return [
-            'bale_id' => $baleId,
             'nomor_naskah' => $nomor,
             'tahun' => NaskahYear::from($tanggal),
             'tanggal_naskah' => NaskahYear::normalizeDate($tanggal),
@@ -209,16 +204,5 @@ class NaskahIngestService
         $trimmed = trim($value);
 
         return $trimmed === '' ? null : $trimmed;
-    }
-
-    protected function requireBaleId(string $baleId): string
-    {
-        $baleId = strtolower(trim($baleId));
-
-        if ($baleId === '') {
-            throw SrikandiException::invalidRequest('bale_id wajib diisi.');
-        }
-
-        return $baleId;
     }
 }

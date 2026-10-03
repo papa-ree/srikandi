@@ -73,21 +73,16 @@ function srikandiSetup(): Closure
 }
 
 /**
- * UUID `bale_lists.id` untuk test.
+ * 🔴 DIHAPUS: `baleUuid()`.
  *
- * 🔴 `bale_id` bukan lagi integer bebas. Nilainya harus UUID karena kolomnya
- * menunjuk `bale_lists.id`, dan test ingest memakai UUID yang TIDAK ada di tabel
- * itu — sengaja. `bale_lists` milik CMS dan bukan bagian darilingkungan test
- * srikandi, jadi FK tidak dideklarasikan; yang diuji di sini adalah kontrak
- * payload, bukan integritas referensial.
+ * Fungsi ini pernah ada untuk menghasilkan UUID `bale_lists.id` di payload
+ * ingest. Sekarang `srikandi_naskah` tidak punya kolom `bale_id` sama sekali -
+ * cache dari satu mailbox SRIKANDI tidak berhubungan dengan katalog tenant
+ * database. Lihat catatan di `create_srikandi_naskah_table`.
+ *
+ * Sengaja tidak diganti jadi fungsi lain: tidak ada lagi yang perlu UUID
+ * organisasi di package ini.
  */
-function baleUuid(int $seed = 1): string
-{
-    return sprintf(
-        '00000000-0000-4000-8000-%012d',
-        $seed
-    );
-}
 
 /**
  * Token scraper dengan scope yang diminta.

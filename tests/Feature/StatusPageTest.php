@@ -95,7 +95,7 @@ describe('halaman status bale/srikandi', function () {
     it('menampilkan DoD sebagai selesai', function () {
         $labels = statusItems(statusOf('srikandi'))->pluck('label');
 
-        expect($labels)->toContain('Kerangka package + 2 migration')
+        expect($labels)->toContain('Kerangka package + 2 migration (digabung)')
             ->toContain('Listener balasan masuk dari `WaraIncomingMessage`');
     });
 

@@ -27,22 +27,23 @@ class NaskahIngestController extends SrikandiController
 
     public function __invoke(Request $request): JsonResponse
     {
+        // 🔴 TIDAK ADA `bale_id` di payload, dan itu disengaja.
+        //
+        // `srikandi_naskah` adalah cache dari SATU mailbox SRIKANDI. Tidak ada
+        // hubungannya dengan `bale_lists` (katalog tenant database), jadi
+        // meminta UUID organisasi di sini hanya memaksa scraper mengirim data
+        // yang tidak berarti - dan kalau salah, dokumen resmi tersimpan di
+        // bawah tenant yang salah tanpa error yang terlihat.
+        //
+        // Identitas pemanggil tetap dijaga, tapi lewat api token yang sudah
+        // ada (`srikandi.naskah.write`), bukan lewat kolom di body.
         $validated = $request->validate([
-            'bale_id' => ['required', 'uuid'],
             'items' => ['present', 'array', 'max:500'],
             'items.*' => ['array'],
         ]);
 
-        $tokenBaleId = $request->user('api-token')?->bale_id;
-
-        if ($tokenBaleId !== null && strtolower($tokenBaleId) !== strtolower($validated['bale_id'])) {
-            return $this->failure(SrikandiException::invalidRequest(
-                'bale_id pada payload tidak cocok dengan bale_id pada token.'
-            ));
-        }
-
         try {
-            $counts = $this->naskah->ingest($validated['bale_id'], $validated['items']);
+            $counts = $this->naskah->ingest($validated['items']);
         } catch (SrikandiException $e) {
             return $this->failure($e);
         } catch (\Throwable $e) {

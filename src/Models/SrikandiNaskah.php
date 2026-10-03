@@ -2,6 +2,7 @@
 
 namespace Bale\Srikandi\Models;
 
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 
 /**
@@ -11,8 +12,11 @@ use Illuminate\Database\Eloquent\Model;
  * ini hanya menyimpan potret yang dibaca scraper supaya Bale tidak perlu login
  * berulang ke Srikandi hanya untuk tahu "naskah ini sudah pernah masuk".
  *
- * @property int $id
- * @property string $bale_id
+ * 🔴 Primary key UUID, bukan auto-increment. Konsisten dengan `bale_lists`,
+ * `api_tokens`, dan `wara_clients`, dan supaya tidak perlu koordinasi dengan
+ * ID yang dibangkitkan database.
+ *
+ * @property string $id
  * @property string $nomor_naskah
  * @property int $tahun
  * @property string|null $tanggal_naskah
@@ -29,10 +33,11 @@ use Illuminate\Database\Eloquent\Model;
  */
 class SrikandiNaskah extends Model
 {
+    use HasUuids;
+
     protected $table = 'srikandi_naskah';
 
     protected $fillable = [
-        'bale_id',
         'nomor_naskah',
         'tahun',
         'tanggal_naskah',
@@ -61,11 +66,14 @@ class SrikandiNaskah extends Model
      *
      * `tahun` ikut masuk karena `nomor_naskah` yang sama bisa muncul di tahun
      * berbeda.
+     *
+     * 🔴 Tanpa kolom organisasi, dan itu benar: `srikandi_naskah` adalah cache
+     * dari SATU mailbox SRIKANDI. Lihat catatan panjang di migrasi
+     * `create_srikandi_naskah_table` soal kenapa tidak ada `bale_id`.
      */
     public function dedupKey(): string
     {
         return implode('|', [
-            $this->bale_id,
             $this->nomor_naskah,
             $this->tahun,
         ]);
