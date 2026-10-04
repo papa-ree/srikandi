@@ -68,12 +68,39 @@ describe('halaman status bale/wara', function () {
         expect(statusItems(statusOf('wara'))->where('status', 'open'))->not->toBeEmpty();
     });
 
-    it('semua fase 0-10 berstatus done', function () {
+    it('semua fase 0-13 berstatus done', function () {
         $fases = statusItems(statusOf('wara'))
             ->filter(fn ($item) => str_starts_with($item['label'], 'Fase '));
 
-        expect($fases)->toHaveCount(11)
+        expect($fases)->toHaveCount(14)
             ->and($fases->pluck('status')->unique()->all())->toBe(['done']);
+    });
+
+    it('🔴 mencatat client bawaan sebagai SUDAH TIDAK ADA', function () {
+        // 🔴 Assertion ini menjaga halaman status tidak lagi-usang diam-diam.
+        //
+        // `Wara (bawaan)` dihapus 4 Okt 2026 dan digantikan client per package.
+        // Kalau status.php masih menyebutnya, halaman terlihat bisa dipercaya
+        // untuk memutuskan "apakah ini sudah selesai".
+        // untuk memutuskan "apakah ini sudah selesai".
+        $text = json_encode(statusOf('wara'), JSON_UNESCAPED_UNICODE);
+
+        expect($text)->not->toContain('Wara (bawaan)');
+    });
+
+    it('🔴 mencatat breaking change scraper yang belum diselesaikan', function () {
+        // Payload `POST /naskah-dinas` tidak lagi punya kolom organisasi, tapi
+        // `rak-srikandi` belum menyesuaikan. Ini harus terlihat di halaman
+        // status, bukan baruketahuan saat scraper gagal di lapangan.
+        $items = statusItems(statusOf('wara'));
+
+        $scraper = $items->firstWhere(
+            fn ($item) => str_contains($item['label'], 'rak-srikandi')
+        );
+
+        expect($scraper)->not->toBeNull()
+            ->and($scraper['status'])->toBe('open')
+            ->and($scraper['meta'] ?? null)->toBe('breaking change');
     });
 
     it('tidak ada status yang tidak dikenal', function () {
