@@ -15,6 +15,7 @@
 
 use Bale\Api\Models\ApiToken;
 use Bale\Api\Services\TokenManager;
+use Bale\Srikandi\Commands\InstallCommand;
 use Bale\Srikandi\Models\SrikandiOtpState;
 use Bale\Srikandi\SrikandiServiceProvider;
 use Bale\Srikandi\Support\OtpCode;
@@ -151,8 +152,20 @@ function seedSendableDevice(
         return;
     }
 
+    // 🔴 Client harus bernama PERSIS seperti yang dicari `OtpService`.
+    //
+    // `sessionForPurpose()` mengambil client lewat
+    // `DeviceRouter::defaultServiceClient()` - yang mengembalikan client tipe
+    // `service` PERTAMA, bukan client dengan nama tertentu. Test lama memakai
+    // `client-test`, dan selama `client-test` satu-satunya client itu
+    // kebetulan cocok.
+    //
+    // Begitu test lain membuat client `service` lebih dulu, `defaultServiceClient()`
+    // akan mengembalikan yang itu dan route di sini tidak pernah terlihat.
+    // Gejalanya `422 no_otp_device` di test yang tidak menyangkut device sama
+    // sekali - sulit ditelusuri karena tidak ada yang salah.
     $client = WaraClient::query()->firstOrCreate(
-        ['name' => 'client-test'],
+        ['name' => InstallCommand::WARA_CLIENT_NAME],
         ['type' => WaraClient::TYPE_SERVICE, 'is_active' => true],
     );
 

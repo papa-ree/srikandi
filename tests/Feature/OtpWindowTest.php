@@ -1,5 +1,6 @@
 <?php
 
+use Bale\Srikandi\Commands\InstallCommand;
 use Bale\Srikandi\Models\SrikandiOtpState;
 use Bale\Srikandi\Support\PhoneMask;
 use Bale\Wara\Events\WaraIncomingMessage;
@@ -108,8 +109,15 @@ describe('kontrak v2: jendela listening (spec §5.0b)', function () {
         // global dan sudah dihapus; sekarang ada di `wara_routes` dengan
         // `UNIQUE (client_id, purpose)`. `client_id` di luar `$fillable`, jadi
         // lewat `forceFill`.
+        // 🔴 Client HARUS milik Srikandi, bukan client generik.
+        //
+        // `OtpService::sessionForPurpose()` mencari client lewat
+        // `DeviceRouter::defaultServiceClient()` dan route-nya di-filter
+        // `client_id`. Route yang dibuat di client lain tidak akan pernah terlihat -
+        // gejalanya test gagal dengan 422 padahal device-nya sudah ada dan route-nya
+        // sudah dibuat.
         $client = WaraClient::query()->firstOrCreate(
-            ['name' => 'client-offline'],
+            ['name' => InstallCommand::WARA_CLIENT_NAME],
             ['type' => WaraClient::TYPE_SERVICE, 'is_active' => true],
         );
 

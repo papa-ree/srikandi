@@ -9,6 +9,7 @@ use Bale\Srikandi\Support\OtpPhone;
 use Bale\Wara\Exceptions\WaraException;
 use Bale\Wara\Models\WaraRoute;
 use Bale\Wara\Models\WaraSession;
+use Bale\Wara\Support\DeviceRouter;
 use Bale\Wara\WaraManager;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -150,8 +151,10 @@ class OtpService
         if ($session === null) {
             throw SrikandiException::noOtpDevice(
                 sprintf(
-                    'Tidak ada device WhatsApp dengan purpose "%s". '
-                    .'Tetapkan lewat halaman Device, lalu jalankan: php artisan wara:sync-devices',
+                    'Client Wara "Srikandi (Package)" belum punya route untuk '
+                    .'purpose "%s". Petakan di menu Wara > Client, lalu jalankan '
+                    .'php artisan wara:sync-devices. Jalur Device tidak bisa '
+                    .'dipakai - penugasan device sudah dihapus.',
                     $purpose
                 )
             );
@@ -193,34 +196,40 @@ class OtpService
     }
 
     /**
-     * Device yang melayani sebuah purpose, dicari lewat `wara_routes`.
+     * Device yang melayani sebuah purpose, dicari lewat `wara_routes` milik
+     * client Srikandi.
      *
-     * 🔴 `wara_sessions.purpose` SUDAH DIHAPUS. Kolom itu unik global, jadi
-     * hanya satu device di seluruh instalasi yang boleh punya satu purpose.
-     * jadi menambah klien kedua untuk `notifikasi` mustahil. Sekarang
-     * penugasannya pindah ke `wara_routes` dengan `UNIQUE (client_id, purpose)`.
+     * 🔴 `wara_sessions.purpose` SUDAH DIHAPUS. Kolom itu unik global, jadi hanya
+     * satu device di seluruh instalasi yang boleh punya satu purpose - dan begitu
+     * ada client kedua, keduanya berebut device yang sama tanpa ada cara tahu
+     * siapa berhak atas apa. Penugasan sekarang pindah ke `wara_routes` dengan
+     * `UNIQUE (client_id, purpose)`.
      *
-     * Kode lama masih men-query kolom yang sudah hilang:
+     * 🔴 `client_id` WAJIB ikut difilter. Tanpa itu, query ini mengembalikan route
+     * PERTAMA yang cocok - termasuk milik client lain. Itu persis bug yang sudah
+     * dibongkar di `SendClientResolver`: pemanggil dari satu client diam-diam
+     * memakai device milik client lain. Selama hanya ada satu client, bug-nya
+     * tidak terlihat; begitu `srikandi:install` membuat client kedua, dia muncul.
      *
-     *     WaraSession::query()->where('purpose', $purpose)->first();
+     * Client diambil dari `DeviceRouter::defaultServiceClient()`. Method itu
+     * sebelumnya TIDAK pernah dipanggil siapa pun di seluruh package - dan justru
+     * sekarang barulah punya gunanya: ia adalah cara resmi mendapatkan "client
+     * internal yang tidak punya token sendiri".
      *
-     * Itu `Column not found: Unknown column 'purpose'` - jadi `POST
-     * /api/v1/srikandi/otp-request` balas **500**, bukan 422 `no_otp_device`
-     * yang Pesan actionable itu. Terverifikasi dengan query langsung ke DB.
-     *
-     * 🔴 Batasnya, dan sengaja dicatat: pemetaan `purpose -> device` sekarang
-     * tidak lagi global, jadi "device mana untuk purpose ini" bisa lebih dari
-     * satu jawaban. Untuk sekarang yang diambil adalah route PERTAMA (paling
-     * lama). Itu terjemahan paling jujur dari semantik lama, dan cukup untuk
-     * jalur OTP yang memang akan di-retire.
-     *
-     * Kalau nanti butuh client yang ditentukan, `DeviceRouter` sudah
-     * menyediakannya - tapi itu butuh keputusan identitas client (lihat
-     * `docs/wara/PROMPT-REFACTOR.md`), jadi tidak ditebak di sini.
+     * Kalau client tidak ditemukan, hasilnya `null` - bukan route milik siapa pun.
+     * Itu pilihan yang benar: lebih baik OTP gagal dengan pesan yang menyebut
+     * penyebabnya daripada terkirim dari device yang bukan haknya.
      */
     protected function sessionForPurpose(string $purpose): ?WaraSession
     {
+        $client = app(DeviceRouter::class)->defaultServiceClient();
+
+        if ($client === null) {
+            return null;
+        }
+
         $route = WaraRoute::query()
+            ->where('client_id', $client->getKey())
             ->where('purpose', $purpose)
             ->where('outbound_enabled', true)
             ->orderBy('created_at')
