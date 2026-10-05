@@ -99,6 +99,19 @@ function srikandiSetup(): Closure
 /**
  * Token scraper dengan scope yang diminta.
  *
+ * 🔴 Default-nya include SEMUA scope Srikandi yang ada, termasuk
+ * `srikandi.client.credentials`.
+ *
+ * Itu disengaja, dan bukan berarti credential perlu longgar di produksi.
+ * Justru sebaliknya: test yang memanggil endpoint kredensial tanpa
+ * menyebut scope eksplisit akan gagal 403 kalau scope-nya lupa ditambahkan
+ * di sini -- dan pesan errornya langsung menunjukkan scope mana yang kurang.
+ *
+ * Yang menguji pemisahan scope SELALU menyebut scope-nya eksplisit
+ * (`scraperToken(['srikandi.client.read'])`). Kalau tidak, test pemisahan
+ * scope akan lulus karena defaultnya sudah longgar, bukan karena pemisahan
+ * Working dengan benar.
+ *
  * @param  list<string>  $scopes
  * @return array{plain: string, model: ApiToken}
  */
@@ -106,6 +119,8 @@ function scraperToken(array $scopes = [
     'srikandi.otp.read',
     'srikandi.otp.write',
     'srikandi.naskah.write',
+    'srikandi.client.read',
+    'srikandi.client.credentials',
 ]): array
 {
     return app(TokenManager::class)->issue('Scraper Srikandi', $scopes);

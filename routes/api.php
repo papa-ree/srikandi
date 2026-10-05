@@ -1,5 +1,6 @@
 <?php
 
+use Bale\Srikandi\Http\Controllers\ClientController;
 use Bale\Srikandi\Http\Controllers\NaskahIngestController;
 use Bale\Srikandi\Http\Controllers\OtpPendingController;
 use Bale\Srikandi\Http\Controllers\OtpRequestController;
@@ -38,4 +39,38 @@ Route::middleware('bale.api')->prefix('api/v1/srikandi')->name('api.v1.srikandi.
     Route::post('naskah-dinas', NaskahIngestController::class)
         ->middleware('scope:srikandi.naskah.write')
         ->name('naskah-dinas');
+
+    /*
+     * ------------------------------------------------------------------
+     | Endpoint client (S3)
+     * ------------------------------------------------------------------
+     |
+     | 🔴 `credentials` dan `heartbeat` TIDAK memakai scope `client.write`.
+     |
+     | Rencana awal menuliskan `srikandi.client.write` untuk heartbeat. Scope itu
+     | sengaja tidak dibuat: heartbeat hanya menulis waktu, dan menambah scope
+     | baru berarti ada operator yang bisa salah memberikan akses tulis ke
+     | endpoint yang bisa mengubah data client.
+     |
+     | `credentials` memakai scope-nya sendiri karena isinya plaintext. Itu
+     | satu-satunya endpoint di sistem yang melepas kredensial keluar database.
+     |
+     */
+
+    Route::get('clients', [ClientController::class, 'index'])
+        ->middleware('scope:srikandi.client.read')
+        ->name('clients.index');
+
+    Route::get('clients/{slug}/credentials', [ClientController::class, 'credentials'])
+        ->middleware('scope:srikandi.client.credentials')
+        ->name('clients.credentials');
+
+    // 🔴 Heartbeat pakai `naskah.write`, bukan scope baru. Alasannya: isinya
+    // laporan hasil scraping -- waktu login, waktu naskah masuk, dan error.
+    // Token yang boleh mengirim naskah sudah pasti boleh melaporkan bahwa
+    // dia berhasil mengirimnya. Scope terpisah di sini cuma menambah satu
+    // permission yang harus diberikan satu per satu ke ke setiap token scraper.
+    Route::post('clients/{slug}/heartbeat', [ClientController::class, 'heartbeat'])
+        ->middleware('scope:srikandi.naskah.write')
+        ->name('clients.heartbeat');
 });

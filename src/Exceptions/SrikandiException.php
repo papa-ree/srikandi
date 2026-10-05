@@ -101,6 +101,25 @@ class SrikandiException extends RuntimeException
         );
     }
 
+    /**
+     * Client ada tapi dimatikan: 403, bukan 404.
+     *
+     * 403 dengan sengaja, dan ini perbedaan yang operasional.
+     *
+     * Kalau client nonaktif disamarkan jadi 404, scraper akan menyimpulkan
+     * slug-nya salah lalu mencoba slug lain -- lalu berhenti setelah mencoba
+     * semua slug dan melapor "tidak ada client yang bisa jalan". Sementara itu
+     * operator melihat tidak ada error sama sekali.
+     *
+     * 403 memberitahu dua hal sekaligus: slug-nya benar, dan masalahnya
+     * konfigurasi. Itu yang membuat operator bisa langsung mengaktifkan client
+     * tanpa membaca log.
+     */
+    public static function clientInactive(string $message, array $context = []): self
+    {
+        return new self($message, 403, 'client_inactive', $context);
+    }
+
     public function status(): int
     {
         return $this->status;
