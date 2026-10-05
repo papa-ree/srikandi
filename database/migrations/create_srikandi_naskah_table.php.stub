@@ -44,14 +44,28 @@ use Illuminate\Support\Facades\Schema;
  * supaya keputusan `inserted` vs `revised` berasal dari sumber data, bukan
  * dari tebakan backend (spec §5.4).
  *
- * Unique key adalah `(nomor_naskah, tahun)`, tanpa kolom organisasi.
+ * 🔴 UNIQUE KEY SEKARANG `(sumber, nomor_naskah, tahun)` -- SUDAH DITERAPKAN
  *
- * Konsekuensinya jujur dan perlu diketahui: kalau nanti ada integrasi
- * SRIKANDI kedua menulis ke tabel yang sama, keduanya akan BERBENTURAN di
- * nomor naskah yang sama - dan itu akan terdeteksi sebagai `unchanged`, bukan
- * error. Untuk sekarang itu tidak relevan: satu instance, satu akun SRIKANDI.
- * Kalau nanti butuh multi-instance, pen dongkolnya kolom `sumber` (string
- * pengenal instance, mis. slug satker), bukan UUID tenant.
+ * Versi sebelum multi-client punya unique `(nomor_naskah, tahun)`, dan catatan di
+ * desainnya menyebutkannya sebagai kendala: "kalau nanti ada integrasi
+ * SRIKANDI kedua menulis ke tabel yang sama, keduanya akan BERBENTURAN".
+ * Kendala itu sekarang benar-benar terjadi -- satu instalasi bisa punya beberapa
+ * akun Srikandi, dan semuanya menulis ke tabel ini.
+ *
+ * 🔴 `sumber` ADALAH PENENTU KEBERHASILAN naskah. BUKAN `session_key`.
+ *
+ * `session_key` berubah setiap siklus login dan sering null kalau session belum
+ * terbentuk. Kalau naskah diikat ke `session_key`, semua naskah dari siklus
+ * sebelumnya kehilangan pemiliknya dan `sumber`-nya tidak bisa ditentukan lagi.
+ * `sumber` = `srikandi_clients.slug`, yang stabil selama client ada.
+ *
+ * 🔴 `sumber` NOT NULL **TANPA DEFAULT**. Rencana awalnya `DEFAULT 'default'`, dan
+ * itu keliru: default berarti naskah yang gagal menentukan pemiliknya akan
+ * tersimpan seolah-olah milik client `default` -- kesalahan yang tidak akan
+ * muncul di mana pun, karena yang tersimpan terlihat valid.
+ *
+ * Paket belum production, jadi scraper di-update bersamaan: `sumber` wajib dari
+ * awal, tanpa backfill, tanpa jalur kompatibilitas yang harus dipelihara.
  */
 return new class extends Migration
 {
@@ -59,6 +73,12 @@ return new class extends Migration
     {
         Schema::create('srikandi_naskah', function (Blueprint $table) {
             $table->uuid('id')->primary();
+
+            /*
+             * Slug client pemilik naskah ini. `NOT NULL` tanpa default -- lihat
+             * catatan panjang di docblock migrasi.
+             */
+            $table->string('sumber', 64);
 
             $table->string('nomor_naskah', 191);
             $table->unsignedSmallInteger('tahun')->default(0);
@@ -86,7 +106,14 @@ return new class extends Migration
 
             $table->timestamps();
 
-            $table->unique(['nomor_naskah', 'tahun']);
+            // 🔴 `sumber` jadi kolom PERTAMA unique key. Tanpa itu, dua akun
+            // Srikandi yang punya naskah dengan nomor sama akan saling menimpa,
+            // dan yang terjadi adalah `unchanged` -- bukan error, jadi tidak
+            // ada yang tahu satu akun diam-diam kehilangan riwayat naskahnya.
+            $table->unique(['sumber', 'nomor_naskah', 'tahun']);
+
+            // Filter daftar UI: satu client, satu tahun, urutan terbaru.
+            $table->index(['sumber', 'tahun', 'last_seen_at']);
             $table->index('last_seen_at');
         });
     }

@@ -32,6 +32,7 @@ function naskahItem(array $overrides = []): array
 describe('POST /naskah-dinas (spec §5.4)', function () {
     it('menyimpan naskah baru dan melaporkan inserted', function () {
         $response = $this->postJson('/api/v1/srikandi/naskah-dinas', [
+            'sumber' => 'default',
             'items' => [naskahItem(), naskahItem(['nomor' => '800/UA.2026/124'])],
         ], asScraper());
 
@@ -46,6 +47,7 @@ describe('POST /naskah-dinas (spec §5.4)', function () {
 
     it('primary key naskah adalah UUID, bukan auto-increment', function () {
         $this->postJson('/api/v1/srikandi/naskah-dinas', [
+            'sumber' => 'default',
             'items' => [naskahItem()],
         ], asScraper())->assertOk();
 
@@ -68,10 +70,12 @@ describe('POST /naskah-dinas (spec §5.4)', function () {
         // di atas tetap bisa hijau kalau id pertama kebetulan bukan pola UUID.
         // Yang diuji di sini: dua baris, dua id berbeda, keduanya UUID.
         $this->postJson('/api/v1/srikandi/naskah-dinas', [
+            'sumber' => 'default',
             'items' => [naskahItem()],
         ], asScraper())->assertOk();
 
         $this->postJson('/api/v1/srikandi/naskah-dinas', [
+            'sumber' => 'default',
             'items' => [naskahItem(['nomor' => '801/UA.2026/123'])],
         ], asScraper())->assertOk();
 
@@ -84,6 +88,7 @@ describe('POST /naskah-dinas (spec §5.4)', function () {
 
     it('melaporkan unchanged dan memperbarui last_seen_at', function () {
         $first = $this->postJson('/api/v1/srikandi/naskah-dinas', [
+            'sumber' => 'default',
             'items' => [naskahItem()],
         ], asScraper());
 
@@ -92,6 +97,7 @@ describe('POST /naskah-dinas (spec §5.4)', function () {
         $this->travel(3)->minutes();
 
         $this->postJson('/api/v1/srikandi/naskah-dinas', [
+            'sumber' => 'default',
             'items' => [naskahItem()],
         ], asScraper())
             ->assertOk()
@@ -106,10 +112,12 @@ describe('POST /naskah-dinas (spec §5.4)', function () {
 
     it('melaporkan revised saat row_hash berubah', function () {
         $this->postJson('/api/v1/srikandi/naskah-dinas', [
+            'sumber' => 'default',
             'items' => [naskahItem()],
         ], asScraper())->assertOk();
 
         $this->postJson('/api/v1/srikandi/naskah-dinas', [
+            'sumber' => 'default',
             'items' => [naskahItem(['hash_value' => 'ffffffffffffffffffffffffffffffff'])],
         ], asScraper())
             ->assertOk()
@@ -123,11 +131,13 @@ describe('POST /naskah-dinas (spec §5.4)', function () {
 
     it('BACKEND yang memutuskan inserted vs revised, bukan scraper', function () {
         $this->postJson('/api/v1/srikandi/naskah-dinas', [
+            'sumber' => 'default',
             'items' => [naskahItem()],
         ], asScraper());
 
         // Scraper mengirim status "baru"; backend harus mengabaikannya.
         $this->postJson('/api/v1/srikandi/naskah-dinas', [
+            'sumber' => 'default',
             'items' => [naskahItem(['is_new' => true, 'status_baru' => 'baru'])],
         ], asScraper())
             ->assertOk()
@@ -145,7 +155,11 @@ describe('POST /naskah-dinas (spec §5.4)', function () {
         // Laravel mengabaikan field yang tidak dideklarasikan, jadi yang bisa
         // kita periksa adalah: payload dengan `bale_id` tetap berhasil DAN
         // nilainya TIDAK tersimpan ke kolom mana pun.
+        // `sumber` ikut dikirim supaya payload ini sah -- kalau tidak, validasi
+        // menolak dengan 422 dan test ini jadi lulus karena alasan yang salah:
+        // ia_then menguji "422" padahal yang dimaksud "200 dengan bale_id diabaikan".
         $this->postJson('/api/v1/srikandi/naskah-dinas', [
+            'sumber' => 'default',
             'bale_id' => '00000000-0000-4000-8000-000000009999',
             'items' => [naskahItem()],
         ], asScraper())->assertOk()->assertJsonPath('inserted', 1);
@@ -157,10 +171,12 @@ describe('POST /naskah-dinas (spec §5.4)', function () {
 
     it('memisahkan naskah yang sama dengan tahun berbeda', function () {
         $this->postJson('/api/v1/srikandi/naskah-dinas', [
+            'sumber' => 'default',
             'items' => [naskahItem(['tanggal' => '2026-09-25'])],
         ], asScraper())->assertJsonPath('inserted', 1);
 
         $this->postJson('/api/v1/srikandi/naskah-dinas', [
+            'sumber' => 'default',
             'items' => [naskahItem(['tanggal' => '2025-09-25'])],
         ], asScraper())->assertJsonPath('inserted', 1);
 
@@ -169,11 +185,13 @@ describe('POST /naskah-dinas (spec §5.4)', function () {
 
     it('menyimpan kode lewat unique (nomor_naskah, tahun)', function () {
         $this->postJson('/api/v1/srikandi/naskah-dinas', [
+            'sumber' => 'default',
             'items' => [naskahItem()],
         ], asScraper());
 
         // Insert kedua dengan kunci sama harus jadi revise/unchanged, bukan error.
         $this->postJson('/api/v1/srikandi/naskah-dinas', [
+            'sumber' => 'default',
             'items' => [naskahItem(['hash_value' => 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'])],
         ], asScraper())->assertOk();
 
@@ -182,6 +200,7 @@ describe('POST /naskah-dinas (spec §5.4)', function () {
 
     it('menolak items yang bukan array', function () {
         $this->postJson('/api/v1/srikandi/naskah-dinas', [
+            'sumber' => 'default',
             'items' => 'bukan array',
         ], asScraper())->assertStatus(422);
     });
@@ -191,6 +210,7 @@ describe('penurunan tahun dari tanggal (spec §3.2)', function () {
     it('mengambil tahun dari tanggal, bukan dari nomor naskah', function () {
         // Nomor berakhiran 2025, tapi tanggalnya 2026.
         $this->postJson('/api/v1/srikandi/naskah-dinas', [
+            'sumber' => 'default',
             'items' => [naskahItem(['nomor' => '800/UA.2025/999', 'tanggal' => '2026-09-25'])],
         ], asScraper())->assertOk();
 
@@ -199,6 +219,7 @@ describe('penurunan tahun dari tanggal (spec §3.2)', function () {
 
     it('mengisi 0 untuk tanggal tidak terbaca, BUKAN NULL', function () {
         $this->postJson('/api/v1/srikandi/naskah-dinas', [
+            'sumber' => 'default',
             'items' => [
                 naskahItem(['nomor' => 'A', 'tanggal' => null]),
                 naskahItem(['nomor' => 'B', 'tanggal' => '']),
@@ -214,6 +235,7 @@ describe('penurunan tahun dari tanggal (spec §3.2)', function () {
 
     it('menolak tanggal yang kalendernya tidak valid', function () {
         $this->postJson('/api/v1/srikandi/naskah-dinas', [
+            'sumber' => 'default',
             'items' => [naskahItem(['tanggal' => '2026-13-45'])],
         ], asScraper())->assertOk();
 
@@ -226,10 +248,12 @@ describe('penurunan tahun dari tanggal (spec §3.2)', function () {
     it('menggagalkan dedup kalau tanggal tidak terbaca diulang', function () {
         // Dua baris tanpa tanggal dengan nomor sama harus tetap satu baris.
         $this->postJson('/api/v1/srikandi/naskah-dinas', [
+            'sumber' => 'default',
             'items' => [naskahItem(['nomor' => 'X', 'tanggal' => null])],
         ], asScraper())->assertJsonPath('inserted', 1);
 
         $this->postJson('/api/v1/srikandi/naskah-dinas', [
+            'sumber' => 'default',
             'items' => [naskahItem(['nomor' => 'X', 'tanggal' => null])],
         ], asScraper())->assertJsonPath('unchanged', 1);
 
@@ -240,6 +264,7 @@ describe('penurunan tahun dari tanggal (spec §3.2)', function () {
 describe('penyimpanan status mentah (spec §3.2)', function () {
     it('menyimpan status_berkas null apa adanya', function () {
         $this->postJson('/api/v1/srikandi/naskah-dinas', [
+            'sumber' => 'default',
             'items' => [naskahItem(['status_berkas' => null])],
         ], asScraper())->assertOk();
 
@@ -251,6 +276,7 @@ describe('penyimpanan status mentah (spec §3.2)', function () {
 
     it('menyimpan string status_berkas tanpa memnormalisasi', function () {
         $this->postJson('/api/v1/srikandi/naskah-dinas', [
+            'sumber' => 'default',
             'items' => [naskahItem(['status_berkas' => 'ADA'])],
         ], asScraper())->assertOk();
 
@@ -259,6 +285,7 @@ describe('penyimpanan status mentah (spec §3.2)', function () {
 
     it('menyimpan bentuk non-string tanpa diam-diam jadi teks', function () {
         $this->postJson('/api/v1/srikandi/naskah-dinas', [
+            'sumber' => 'default',
             'items' => [naskahItem(['status_berkas' => ['scan.pdf', 'surat.pdf']])],
         ], asScraper())->assertOk();
 
@@ -272,6 +299,7 @@ describe('penyimpanan status mentah (spec §3.2)', function () {
 
     it('menyimpan snapshot payload mentah untuk rekonstruksi', function () {
         $this->postJson('/api/v1/srikandi/naskah-dinas', [
+            'sumber' => 'default',
             'items' => [naskahItem()],
         ], asScraper())->assertOk();
 
@@ -284,6 +312,7 @@ describe('penyimpanan status mentah (spec §3.2)', function () {
 
     it('memetakan pengirim dari nama_pengirim', function () {
         $this->postJson('/api/v1/srikandi/naskah-dinas', [
+            'sumber' => 'default',
             'items' => [naskahItem()],
         ], asScraper())->assertOk();
 
@@ -294,6 +323,7 @@ describe('penyimpanan status mentah (spec §3.2)', function () {
 describe('baris tidak valid', function () {
     it('melewati item tanpa nomor, bukan menumpuk pada tahun 0', function () {
         $response = $this->postJson('/api/v1/srikandi/naskah-dinas', [
+            'sumber' => 'default',
             'items' => [
                 naskahItem(['nomor' => '']),
                 naskahItem(['nomor' => null]),
@@ -311,6 +341,7 @@ describe('baris tidak valid', function () {
 
     it('menyimpan row_hash dengan prefix md5:', function () {
         $this->postJson('/api/v1/srikandi/naskah-dinas', [
+            'sumber' => 'default',
             'items' => [naskahItem(['hash_value' => 'abc123'])],
         ], asScraper())->assertOk();
 
@@ -319,16 +350,19 @@ describe('baris tidak valid', function () {
 
     it('memperlakukan hash yang sebelumnya NULL sebagai revised', function () {
         $this->postJson('/api/v1/srikandi/naskah-dinas', [
+            'sumber' => 'default',
             'items' => [naskahItem(['hash_value' => null])],
         ], asScraper())->assertJsonPath('inserted', 1);
 
         $this->postJson('/api/v1/srikandi/naskah-dinas', [
+            'sumber' => 'default',
             'items' => [naskahItem(['hash_value' => 'abc123'])],
         ], asScraper())->assertJsonPath('revised', 1);
     });
 
     it('menyimpan null untuk row_hash tanpa prefix', function () {
         $this->postJson('/api/v1/srikandi/naskah-dinas', [
+            'sumber' => 'default',
             'items' => [naskahItem(['hash_value' => null])],
         ], asScraper())->assertOk();
 

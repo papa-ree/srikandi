@@ -22,11 +22,12 @@ class NaskahIngestService
 {
     /**
      * @param  iterable<array<string, mixed>>  $items  isi `data[]` dari Srikandi
+     * @param  string  $sumber  slug client Srikandi yang mengirim payload ini
      * @return array{inserted: int, revised: int, unchanged: int, skipped: int}
      *
      * @throws SrikandiException
      */
-    public function ingest(iterable $items): array
+    public function ingest(iterable $items, string $sumber): array
     {
         $counts = ['inserted' => 0, 'revised' => 0, 'unchanged' => 0, 'skipped' => 0];
 
@@ -45,7 +46,7 @@ class NaskahIngestService
                 continue;
             }
 
-            $outcome = DB::transaction(fn () => $this->persist($row));
+            $outcome = DB::transaction(fn () => $this->persist($row + ['sumber' => $sumber]));
 
             $counts[$outcome]++;
         }
@@ -66,7 +67,20 @@ class NaskahIngestService
      */
     protected function persist(array $row): string
     {
+        /*
+         * 🔴 `sumber` WAJIB ikut dalam pencarian.
+         *
+         * Tanpa itu, dua akun Srikandi dengan nomor naskah sama akan
+         * saling menimpa. Yang terjadi bukan error, tapi `unchanged` -- jadi
+         * satu akun diam-diam kehilangan riwayat naskahnya.
+         *
+         * Ini juga yang membuat `lockForUpdate()` berguna: dua scraper (akun
+         * berbeda) mengirim naskah bernomor sama secara bersamaan, dan keduanya
+         * akan melihat tabel kosong lalu mencoba INSERT. Dengan `sumber` ikut
+         * di lock, keduanya mengunci baris berbeda dan tidak saling menunggu.
+         */
         $existing = SrikandiNaskah::query()
+            ->where('sumber', $row['sumber'])
             ->where('nomor_naskah', $row['nomor_naskah'])
             ->where('tahun', $row['tahun'])
             ->lockForUpdate()

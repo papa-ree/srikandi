@@ -37,13 +37,40 @@ class NaskahIngestController extends SrikandiController
         //
         // Identitas pemanggil tetap dijaga, tapi lewat api token yang sudah
         // ada (`srikandi.naskah.write`), bukan lewat kolom di body.
+        /*
+         * 🔴 `sumber` WAJIB, dan itu perubahan breaking.
+         *
+         * Sebelumnya payload `{ items: [...] }` tidak membawa identitas asal,
+         * karena `srikandi_naskah` dulu dipandang sebagai cache dari SATU
+         * mailbox. Sekarang satu instalasi bisa punya beberapa akun Srikandi
+         * yang semuanya menulis ke tabel yang sama, jadi tanpa `sumber` dua
+         * akun yang punya nomor naskah sama akan saling menimpa.
+         *
+         * Gejalanya bukan error: yang kedua dilaporkan `unchanged`, jadi satu
+         * akun diam-diam kehilangan riwayat naskahnya.
+         *
+         * `sumber` TIDAK diverifikasi terhadap `srikandi_clients` di sini --
+         * hanya dicek bentuknya. Validasi keberadaan client (dan penolakan
+         * kalau client-nya tidak aktif) adalah urusan S3, bersama token binding
+         * per client. Yang sengaja tidak ditambahkan sekarang: endpoint ini
+         * dipanggil scraper yang belum punya alur credentials (S3), jadi
+         * mewajibkan client yang sudah ada akan memutus semua ingest sebelum
+         * S3 selesai.
+         *
+         * Paket belum production, jadi `sumber` wajib dari awal -- bukan
+         * opsional dengan fallback `default`. Default itu berarti naskah yang
+         * gagal menentukan pemiliknya tersimpan seolah-olah milik client
+         * `default`, dan kesalahan itu tidak akan muncul di mana pun karena
+         * yang tersimpan terlihat valid.
+         */
         $validated = $request->validate([
+            'sumber' => ['required', 'string', 'max:64', 'regex:/^[a-z0-9-]+$/'],
             'items' => ['present', 'array', 'max:500'],
             'items.*' => ['array'],
         ]);
 
         try {
-            $counts = $this->naskah->ingest($validated['items']);
+            $counts = $this->naskah->ingest($validated['items'], $validated['sumber']);
         } catch (SrikandiException $e) {
             return $this->failure($e);
         } catch (\Throwable $e) {
