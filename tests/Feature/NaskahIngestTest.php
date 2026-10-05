@@ -1,5 +1,6 @@
 <?php
 
+use Bale\Srikandi\Models\SrikandiClient;
 use Bale\Srikandi\Models\SrikandiNaskah;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Schema;
@@ -8,7 +9,21 @@ use Illuminate\Support\Str;
 require_once __DIR__.'/../helpers.php';
 
 uses(RefreshDatabase::class)
-    ->beforeEach(srikandiSetup());
+    // 🔴 Client `default` dibuat di sini, bukan di tiap test.
+    //
+    // Endpoint sekarang menolak `sumber` yang slug-nya tidak ada di
+    // `srikandi_clients`, jadi setiap test yang mengirim `sumber: default`
+    // butuh client itu benar-benar ada. Kalau tiap test membuat sendiri,
+    // menambah test baru berarti harus ingat - dan test yang lupa akan gagal
+    // dengan 422 yang menyesatkan, bukan karena ada yang salah dengan naskahnya.
+    ->beforeEach(function () {
+        srikandiSetup();
+
+        SrikandiClient::query()->create([
+            'slug' => 'default',
+            'nama' => 'Client Default',
+        ]);
+    });
 
 /**
  * Satu baris list naskah dari Srikandi.
@@ -203,6 +218,94 @@ describe('POST /naskah-dinas (spec §5.4)', function () {
             'sumber' => 'default',
             'items' => 'bukan array',
         ], asScraper())->assertStatus(422);
+    });
+});
+
+describe('validasi sumber (S3.3)', function () {
+    it('menolak sumber yang slug-nya tidak ada di srikandi_clients', function () {
+        // 🔴 Ini test yang memblokir naskah tersimpan di bawah pemilik palsu.
+        //
+        // `default` dibuat di `beforeEach`, jadi `tidak-ada` benar-benar tidak
+        // ada. Tanpa validasi ini, payload tetap `200 OK` dan naskahnya
+        // tersimpan dengan `sumber = 'tidak-ada'` selamanya.
+        $this->postJson('/api/v1/srikandi/naskah-dinas', [
+            'sumber' => 'tidak-ada',
+            'items' => [naskahItem()],
+        ], asScraper())->assertStatus(422)
+            ->assertJsonValidationErrors('sumber');
+
+        expect(SrikandiNaskah::query()->count())->toBe(0);
+    });
+
+    it('menerima sumber milik client yang ada', function () {
+        SrikandiClient::query()->create(['slug' => 'k-office', 'nama' => 'Kantor']);
+
+        $this->postJson('/api/v1/srikandi/naskah-dinas', [
+            'sumber' => 'k-office',
+            'items' => [naskahItem()],
+        ], asScraper())->assertOk();
+
+        expect(SrikandiNaskah::query()->first()->sumber)->toBe('k-office');
+    });
+
+    it('TIDAK menolak sumber milik client yang NONAKTIF', function () {
+        // 🔴 inactive = berhenti scraping, BUKAN=data tidak valid.
+        //
+        // Client yang dinonaktifkan tetap punya naskah historis di database.
+        // Kalau ingest ditolak, scraper yang sedang menyelesaikan antrean
+        // naskah milik client itu akan gagal dan naskahnya hilang -- padahal
+        // naskahnya sudah ada dan masih milik client yang sama.
+        //
+        // Penolakan terhadap client nonaktif adalah urusan endpoint lain
+        // (credentials/heartbeat), bukan endpoint yang menyimpan naskah.
+        SrikandiClient::query()->create([
+            'slug' => 'nonaktif',
+            'nama' => 'Nonaktif',
+            'is_active' => false,
+        ]);
+
+        $this->postJson('/api/v1/srikandi/naskah-dinas', [
+            'sumber' => 'nonaktif',
+            'items' => [naskahItem()],
+        ], asScraper())->assertOk();
+
+        expect(SrikandiNaskah::query()->count())->toBe(1);
+    });
+
+    it('TETAP menolak sumber yang bentuknya salah, walau slug-nya ada', function () {
+        // `exists` tidak menggantikan validasi bentuk. Slug dengan huruf besar
+        // tidak bisa pernah ada di tabel, jadi harus ditolak oleh `regex` --
+        // dan validasinya harus menyangkut format, bukan soal keberadaan.
+        $this->postJson('/api/v1/srikandi/naskah-dinas', [
+            'sumber' => 'Default',
+            'items' => [naskahItem()],
+        ], asScraper())->assertStatus(422)
+            ->assertJsonValidationErrors('sumber');
+
+        expect(SrikandiNaskah::query()->count())->toBe(0);
+    });
+
+    it('memisahkan naskah nomor sama milik dua client berbeda', function () {
+        // 🔴 Ini yang bikin `sumber` masuk unique key.
+        //
+        // Dua akun SRIKANDI punya dokumen dengan nomor identik. Kalau `sumber`
+        // tidak ikut unique key, yang kedua jadi `unchanged` dan akun pertama
+        // diam-diam kehilangan riwayat naskahnya.
+        SrikandiClient::query()->create(['slug' => 'kedua', 'nama' => 'Client Kedua']);
+
+        $this->postJson('/api/v1/srikandi/naskah-dinas', [
+            'sumber' => 'default',
+            'items' => [naskahItem(['hal' => 'Naskah dari akun pertama'])],
+        ], asScraper())->assertOk();
+
+        $this->postJson('/api/v1/srikandi/naskah-dinas', [
+            'sumber' => 'kedua',
+            'items' => [naskahItem(['hal' => 'Naskah dari akun kedua'])],
+        ], asScraper())->assertOk();
+
+        expect(SrikandiNaskah::query()->count())->toBe(2)
+            ->and(SrikandiNaskah::query()->pluck('sumber')->sort()->values()->all())
+            ->toBe(['default', 'kedua']);
     });
 });
 

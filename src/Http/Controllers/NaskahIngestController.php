@@ -6,6 +6,7 @@ use Bale\Srikandi\Exceptions\SrikandiException;
 use Bale\Srikandi\Services\NaskahIngestService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 /**
  * POST /api/v1/srikandi/naskah-dinas (spec §5.4).
@@ -49,22 +50,45 @@ class NaskahIngestController extends SrikandiController
          * Gejalanya bukan error: yang kedua dilaporkan `unchanged`, jadi satu
          * akun diam-diam kehilangan riwayat naskahnya.
          *
-         * `sumber` TIDAK diverifikasi terhadap `srikandi_clients` di sini --
-         * hanya dicek bentuknya. Validasi keberadaan client (dan penolakan
-         * kalau client-nya tidak aktif) adalah urusan S3, bersama token binding
-         * per client. Yang sengaja tidak ditambahkan sekarang: endpoint ini
-         * dipanggil scraper yang belum punya alur credentials (S3), jadi
-         * mewajibkan client yang sudah ada akan memutus semua ingest sebelum
-         * S3 selesai.
-         *
          * Paket belum production, jadi `sumber` wajib dari awal -- bukan
          * opsional dengan fallback `default`. Default itu berarti naskah yang
          * gagal menentukan pemiliknya tersimpan seolah-olah milik client
          * `default`, dan kesalahan itu tidak akan muncul di mana pun karena
          * yang tersimpan terlihat valid.
+         *
+         * 🔴 `sumber` HARUS SLUG YANG ADA, dan ini baru bisa ditutup sekarang.
+         *
+         * Awalnya `sumber` hanya dicek bentuknya, dengan alasan scraper belum
+         * punya alur credentials. Alasan itu sudah kedaluwarsa: S3.1 sudah
+         * memberi scraper cara membaca daftar client dan mengambil kredensial,
+         * jadi scraper sekarang bisa -- dan harus -- mengirim slug yang memang
+         * milik client sungguhan.
+         *
+         * Yang dicek di sini hanya KEBERADAAN slug, bukan apakah client-nya
+         * aktif atau punya kredensial. Alasannya: `srikandi_clients` sengaja
+         * TIDAK punya foreign key dari `srikandi_naskah.sumber`, supaya
+         * dokumen yang sudah tersimpan tidak hilang hanya karena operator
+         * mengganti nama atau menonaktifkan client. Jadi integritas referensial
+         * dicek di pintu masuk, dan tidak ditegakkan retroactive.
+         *
+         * 🔴 Kenapa ini harus 422 dan bukan diterima diam-diam.
+         *
+         * Gejalanya kalau slug salah terus diterima: naskah tetap masuk dengan
+         * pemilik yang salah. Karena unique key-nya `(sumber, nomor_naskah,
+         * tahun)`, naskah milik akun A yang terkirim dengan slug salah akan
+         * tersimpan sebagai dokumen terpisah -- bukan menimpa, jadi tidak ada
+         * yang hilang, tapi operator melihat riwayat naskah yang tidak pernah
+         * ada. Dan karena slug salah masih "berbentuk valid", tidak ada filter
+         * yang membuatnya mencolok.
          */
         $validated = $request->validate([
-            'sumber' => ['required', 'string', 'max:64', 'regex:/^[a-z0-9-]+$/'],
+            'sumber' => [
+                'required',
+                'string',
+                'max:64',
+                'regex:/^[a-z0-9-]+$/',
+                Rule::exists('srikandi_clients', 'slug'),
+            ],
             'items' => ['present', 'array', 'max:500'],
             'items.*' => ['array'],
         ]);
