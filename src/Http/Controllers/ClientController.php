@@ -4,6 +4,7 @@ namespace Bale\Srikandi\Http\Controllers;
 
 use Bale\Srikandi\Exceptions\SrikandiException;
 use Bale\Srikandi\Models\SrikandiClient;
+use Bale\Srikandi\Support\ErrorSanitizer;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Spatie\Activitylog\Models\Activity;
@@ -127,11 +128,23 @@ class ClientController extends SrikandiController
             return $this->unexpected($e);
         }
 
+        // 🔴 `error_message` DISANITASI SEBELUM DISIMPAN.
+        //
+        // Tanpa ini, satu pesan error Playwright yang memuat URL dengan
+        // kredensial di query string akan menuliskan password Srikandi ke
+        // `last_error_message` -- kolom `text` yang tidak terenkripsi dan dibaca
+        // dari halaman UI.
+        //
+        // Sanitasi ini best-effort, bukan jaminan: kredensial dalam bentuk lain
+        // (base64, terpecah) tidak akan tertangkap. Aturan aslinya tetap "jangan
+        // kirim kredensial di pesan error" -- lihat `ErrorSanitizer`.
         $client->forceFill(array_filter([
             'last_login_at' => $validated['login_at'] ?? null,
             'last_naskah_at' => $validated['naskah_at'] ?? null,
             'last_error_at' => $validated['error_at'] ?? null,
-            'last_error_message' => $validated['error_message'] ?? null,
+            'last_error_message' => (new ErrorSanitizer)->sanitizeAndTruncate(
+                $validated['error_message'] ?? null
+            ),
         ], fn ($value) => $value !== null))->save();
 
         return $this->ok([
