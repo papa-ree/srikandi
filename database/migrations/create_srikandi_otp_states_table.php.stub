@@ -7,6 +7,24 @@ use Illuminate\Support\Facades\Schema;
 /**
  * State OTP Srikandi — spec §3.1 dan §5.0b.
  *
+ * 🔴 `phone` SEKARANG TERENKRIPSI, dan `phone_index` yang menemaninya.
+ *
+ * Ini konsekuensi langsung dari pemisahan multi-client: nomor tujuan OTP
+ * adalah data pribadi yang menunjuk orang, dan kolom ini tidak terenkripsi
+ * sementara `srikandi_clients.phone` sudah. Dua tabel yang menyimpan nomor yang
+ * sama dengan perlindungan berbeda adalah inkonsistensi yang akan ditemukan
+ * saat insiden, bukan saat review.
+ *
+ * 🔴 `phone_index` ADALAH HMAC, BUKAN `phone`.
+ *
+ * Cast `encrypted` membuat `where('phone', ...)` tidak pernah cocok -- query-nya
+ * tidak error, hanya selalu kosong. Gejalanya "balasan OTP tidak pernah sampai"
+ * dengan nol petunjuk. Semua pencarian WAJIB lewat `scopeWherePhone()`.
+ *
+ * HMAC (bukan hash biasa) supaya penyerang yang punya dump tabel tidak bisa
+ * menebak nomor dengan mencoba semua kombinasi. Normalisasinya sama dengan
+ * `BlindIndex::normalize()`, jadi `628123456789` dan `+62 812-3456-789` cocok.
+ *
  * 🔴 Kolom kontrak v2 (`request_id`, `opened_at`, `code_hash` nullable) sudah
  * DILETAKAN ke sini, bukan di migration aditif terpisah. Alasannya: satu tabel
  * = satu migration, supaya `migrate:fresh` dan instalasi baru langsung mendapat
@@ -39,7 +57,44 @@ return new class extends Migration
             $table->uuid('request_id')->nullable()->unique();
 
             $table->string('purpose', 32)->default('otp');
-            $table->string('phone', 32);
+
+            /*
+             * 🔴 `sumber` PUNYA `DEFAULT 'default'` -- BERBEDA dari
+             * `srikandi_naskah.sumber` yang tidak punya. Ini bukan inkonsistensi,
+             * dan alasannya konsekuensi, bukan selera:
+             *
+             * - Naskah yatim = dokumen resmi tersimpan di bawah client yang
+             *   kelihatan valid. Salah dan permanen.
+             * - State OTP yatim = jendela pending yang akan kedaluwarsa dalam
+             *   hitungan menit. Tidak ada yang ditampilkan salah, dan
+             *   `otp-pending` mencari lewat `phone_index`, bukan `sumber` --
+             *   jadi sumber yang keliru tidak membuat nomor salah terbaca.
+             *
+             * 🔴 Yang BENAR adalah `default('default')` sebagai placeholder
+             * sampai S3 mengikat token scraper ke client. Setelah itu, `sumber`
+             * di sini WAJIB diisi pemanggil dan default ini harus dihapus --
+             * sama seperti yang akan dilakukan di `srikandi_naskah`.
+             *
+             * Menghapus default ini sekarang justru lebih buruk: `OtpService` belum
+             * tahu client mana yang memiliki jendela, jadi mengorbankan kebenaran
+             * demi aturan yang belum punya mekanismenya.
+             */
+            $table->string('sumber', 64)->default('default');
+
+            /*
+             * 🔴 `TEXT`, bukan `VARCHAR(32)` seperti sebelumnya.
+             *
+             * Kolom ini sekarang memakai cast `encrypted`. Ciphertext-nya adalah
+             * base64 dari beberapa blok, dan itu LEBIH PANJANG dari 32 char --
+             * MySQL memotongnya diam-diam. Gejalanya: dekripsi gagal, tapi hanya
+             * untuk record dengan nomor panjang, jadi sebagian data OTP hilang tanpa ada
+             * yang menyadarinya.
+             */
+            $table->text('phone');
+
+            // HMAC-SHA256 dari `phone` ternormalisasi. Lihat catatan panjang di
+            // docblock migrasi: ini satu-satunya cara mencari nomor ini.
+            $table->string('phone_index', 64)->nullable()->index();
 
             $table->enum('state', ['pending', 'verified', 'consumed', 'expired'])
                 ->default('pending');
@@ -80,7 +135,12 @@ return new class extends Migration
             $table->json('metadata')->nullable();
             $table->timestamps();
 
-            $table->index(['phone', 'state']);
+            // 🔴 Index ikut ke `phone_index`, bukan `phone`. Index di kolom terenkripsi
+            // tidak berguna: isinya ciphertext, dan setiap nomor punya
+            // ciphertext-nya sendiri, jadi lookup selalu miss dan indexnya hanya
+            // menambah waktu tulis.
+            $table->index(['phone_index', 'state']);
+            $table->index(['sumber', 'state']);
             $table->index(['state', 'created_at']);
         });
     }

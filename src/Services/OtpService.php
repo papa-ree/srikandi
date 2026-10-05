@@ -549,7 +549,7 @@ class OtpService
     public function findVerifiableByPhone(string $phone): ?SrikandiOtpState
     {
         return SrikandiOtpState::query()
-            ->where('phone', $phone)
+            ->wherePhone($phone)
             ->where('state', SrikandiOtpState::STATE_PENDING)
             ->where('expires_at', '>', now())
             ->orderByDesc('created_at')
@@ -589,7 +589,7 @@ class OtpService
 
         if ($rawPhone !== null && trim($rawPhone) !== '') {
             return SrikandiOtpState::query()
-                ->where('phone', $this->requirePhone($rawPhone))
+                ->wherePhone($this->requirePhone($rawPhone))
                 ->orderByDesc('created_at')
                 ->first();
         }
@@ -616,7 +616,7 @@ class OtpService
 
         if ($rawPhone !== null && trim($rawPhone) !== '') {
             return SrikandiOtpState::query()
-                ->where('phone', $this->requirePhone($rawPhone))
+                ->wherePhone($this->requirePhone($rawPhone))
                 ->orderByDesc('created_at')
                 ->lockForUpdate()
                 ->first();

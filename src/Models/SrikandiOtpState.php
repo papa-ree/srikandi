@@ -2,6 +2,8 @@
 
 namespace Bale\Srikandi\Models;
 
+use Bale\Srikandi\Support\BlindIndex;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
@@ -44,6 +46,7 @@ class SrikandiOtpState extends Model
      * bisa menimpa hash dengan hash miliknya sendiri.
      */
     protected $fillable = [
+        'sumber',
         'request_id',
         'purpose',
         'phone',
@@ -62,6 +65,11 @@ class SrikandiOtpState extends Model
     ];
 
     protected $casts = [
+        // 🔴 `phone` terenkripsi. Konsekuensinya tidak bisa dicari dengan
+        // `where('phone', ...)`: yang tersimpan ciphertext, jadi query itu
+        // tidak error tapi selalu kosong. Gunakan `scopeWherePhone()`.
+        'phone' => 'encrypted',
+
         'attempts' => 'integer',
         'expires_at' => 'datetime',
         'opened_at' => 'datetime',
@@ -69,6 +77,37 @@ class SrikandiOtpState extends Model
         'consumed_at' => 'datetime',
         'metadata' => 'array',
     ];
+
+    /**
+     * 🔴 Cari state by nomor tujuan lewat blind index.
+     *
+     * Ada sebagai scope, bukan `where('phone', ...)` di pemanggil, karena
+     * kesalahan di sini tidak kelihatan: query-nya jalan, hanya mengembalikan
+     * nol baris. Gejalanya "balasan OTP tidak pernah sampai".
+     */
+    public function scopeWherePhone(Builder $query, string $phone): Builder
+    {
+        return $query->where('phone_index', (new BlindIndex)->make($phone));
+    }
+
+    /**
+     * 🔴 Sinkronkan `phone_index` setiap kali `phone` berubah.
+     *
+     * Tanpa ini, index menunjuk nomor lama dan pencarian kembali nomor yang
+     * sudah diganti -- sehingga balasan OTP untuk nomor baru tidak pernah
+     * match, sementara request-nya sudah tercatat.
+     */
+    protected static function booted(): void
+    {
+        static::saving(function (self $state) {
+            if ($state->isDirty('phone')) {
+                $state->setAttribute(
+                    'phone_index',
+                    (new BlindIndex)->make($state->getAttribute('phone')) ?: null
+                );
+            }
+        });
+    }
 
     public const STATE_PENDING = 'pending';
 

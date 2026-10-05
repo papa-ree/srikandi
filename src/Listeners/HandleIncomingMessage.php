@@ -105,12 +105,24 @@ class HandleIncomingMessage
      * listener" menjadi sifat yang ditegakkan database, bukan sekadar Georgian
      * yang mudah hilang saat refactor.
      *
+     * 🔴 PENCARIAN PAKAI `phone_index`, BUKAN `phone`.
+     *
+     * Kolom `phone` sekarang memakai cast `encrypted`, jadi isinya ciphertext
+     * -- `where('phone', '628123456789')` tidak akan PERNAH cocok. Query itu
+     * tidak error, hanya selalu kosong, dan gejalanya "balasan OTP tidak pernah
+     * sampai" tanpa petunjuk apa pun.
+     *
+     * `phone_index` adalah HMAC-SHA256 dari nomor ternormalisasi. Normalisasi
+     * di `BlindIndex` sengaja sama dengan `OtpPhone::normalizeOrNull()` di
+     * atas, jadi `628123456789` dan `+62 812-3456-789` menghasilkan index yang
+     * sama.
+     *
      * @return Collection<int, SrikandiOtpState>
      */
     protected function matchableStates(string $phone)
     {
         return SrikandiOtpState::query()
-            ->where('phone', $phone)
+            ->wherePhone($phone)
             ->where('state', SrikandiOtpState::STATE_PENDING)
             ->where('expires_at', '>', now())
             ->whereNotNull('code_hash')

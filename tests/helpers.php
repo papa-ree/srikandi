@@ -63,6 +63,17 @@ function srikandiSetup(): Closure
         config()->set('srikandi.otp.max_attempts', 5);
         config()->set('srikandi.otp.code_length', 6);
 
+        // 🔴 WAJIB, bukan opsional.
+        //
+        // `BlindIndex::indexKey()` sengaja TIDAK fallback ke `APP_KEY`, jadi tanpa
+        // env ini setiap test yang menyentuh nomor akan melempar RuntimeException.
+        // Itu perilaku yang benar di produksi -- lebih baik error eksplisit daripada
+        // diam-diam memakai kunci enkripsi untuk index.
+        //
+        // Nilai di sini sengaja BUKAN `APP_KEY`, supaya test juga membuktikan
+        // keduanya memang dipisah.
+        config()->set('srikandi.index_key', 'kunci-index-test-yang-berbeda-dari-app-key');
+
         Http::preventStrayRequests();
         Http::fake([
             'gateway.test/*' => Http::response([
