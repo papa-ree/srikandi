@@ -180,16 +180,30 @@ class InstallCommand extends Command
     }
 
     /**
-     * Seed permission dashboard Srikandi.
+     * Seed permission `bale/srikandi`.
      *
-     * Hanya satu permission: halaman status. Endpoint scraper tidak punya
+     * Permission untuk halaman web (UI Spatie). Endpoint scraper TIDAK punya
      * permission — dikunci token Bearer + scope `bale/api`, bukan permission
-     * Spatie yang menempel pada user.
+     * yang menempel pada user. Jangan tambah scope API ke daftar ini.
+     *
+     * 🔴 `srikandi.client.credentials.read` sengaja TIDAK ada di sini.
+     *
+     * Credential client hanya boleh dibaca lewat API scope
+     * `srikandi.client.credentials`, yang hanya diberikan ke token scraper.
+     * Kalau ini jadi permission web, permission Spatie bisa diberikan ke
+     * user manusia — dan setiap user dengan role itu bisa membuka password
+     * semua client lewat browser. Tidak ada cara membatasinya per-token,
+     * dan activity log akan mencatat "user A membaca password client B"
+     * tanpa bisa menjelaskan kenapa itu perlu.
      */
     protected function seedPermissions(): void
     {
         $permissions = [
             'srikandi.status.read' => 'Membaca halaman status bale/srikandi. Halaman ini read-only.',
+            'srikandi.client.read' => 'Melihat daftar client Srikandi dan statusnya.',
+            'srikandi.client.create' => 'Menambah client Srikandi baru.',
+            'srikandi.client.update' => 'Mengubah kredensial dan konfigurasi client Srikandi.',
+            'srikandi.client.delete' => 'Menghapus client Srikandi.',
         ];
 
         $model = config('permission.models.permission', Permission::class);

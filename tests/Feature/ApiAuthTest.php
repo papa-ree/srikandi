@@ -3,6 +3,7 @@
 use Bale\Api\Services\ApiScopeRegistry;
 use Bale\Srikandi\Models\SrikandiOtpState;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Spatie\Permission\Models\Permission;
 
 require_once __DIR__.'/../helpers.php';
 
@@ -109,7 +110,67 @@ describe('pemisahan scope (spec §7)', function () {
 
         expect($scopes)->toContain('srikandi.otp.read')
             ->toContain('srikandi.otp.write')
-            ->toContain('srikandi.naskah.write');
+            ->toContain('srikandi.naskah.write')
+            ->toContain('srikandi.client.read')
+            ->toContain('srikandi.client.credentials');
+    });
+
+    it('scope credential client TIDAK ikut terpenuhi oleh wildcard client.read', function () {
+        // 🔴 UJI KEPUTUSAN SCOPE, bukan uji keberadaan route.
+        //
+        // Endpoint credentials belum ada (datang di S3), jadi respons HTTP
+        // sekarang 404 -- bukan 403. Test yang memanggil route di sini akan
+        // lulus karena 404, bukan karena scope ditolak; jangan dipaksa hijau
+        // dengan `not->toBe(200)`.
+        //
+        // Yang diuji murni satu hal: `hasAbility('srikandi.client.credentials')`
+        // harus FALSE untuk token yang hanya pegang `srikandi.client.read`.
+        //
+        // 🔴 Catatan: `ApiToken::hasAbility()` memakai `in_array(..., true)` --
+        // pencocokan PERSIS, tanpa wildcard. Jadi "wildcard" di judul test ini
+        // merujuk ke wildcard yang DIPERCAYAKAN orang, bukan yang ada di kode.
+        // Justru itulah alasan scope ini tidak boleh digabung: begitu
+        // `client.credentials` ada di group `client`, checkbox UI token akan
+        // menunchecked-kan orang yang mengira "client.read sudah cukup".
+        $issued = scraperToken(['srikandi.client.read']);
+
+        expect($issued['model']->hasAbility('srikandi.client.read'))->toBeTrue()
+            ->and($issued['model']->hasAbility('srikandi.client.credentials'))->toBeFalse();
+    });
+
+    it('menolak token tanpa scope client untuk operasi client', function () {
+        $issued = scraperToken(['srikandi.otp.read']);
+
+        expect($issued['model']->hasAbility('srikandi.otp.read'))->toBeTrue()
+            ->and($issued['model']->hasAbility('srikandi.client.read'))->toBeFalse()
+            ->and($issued['model']->hasAbility('srikandi.client.credentials'))->toBeFalse();
+    });
+
+    it('TIDAK memakai scope credential sebagai permission web', function () {
+        // Permission Spatie menempel pada user manusia; scope API menempel pada
+        // token. Kalau `srikandi.client.credentials` jadi permission web, setiap
+        // user dengan role itu bisa membuka password semua client lewat browser,
+        // dan activity log hanya mencatat "user A membaca password client B"
+        // tanpa bisa menjelaskan kenapa itu perlu.
+        //
+        // InstallCommand::seedPermissions() sengaja tidak mendaftarkannya, jadi
+        // setelah `srikandi:install` permission itu harus benar-benar tidak ada
+        // di database -- bukan ada tapi tidak diberikan ke role mana pun.
+        $this->artisan('srikandi:install')->assertSuccessful();
+
+        $webPermissions = Permission::query()
+            ->where('name', 'like', 'srikandi.%')
+            ->pluck('name')
+            ->all();
+
+        expect($webPermissions)
+            ->toContain('srikandi.status.read')
+            ->toContain('srikandi.client.read')
+            ->not->toContain('srikandi.client.credentials')
+            // Scope API tidak boleh bocor jadi permission, dan sebaliknya.
+            ->not->toContain('srikandi.otp.read')
+            ->not->toContain('srikandi.otp.write')
+            ->not->toContain('srikandi.naskah.write');
     });
 
     it('mendukung wildcard read untuk semua endpoint baca', function () {

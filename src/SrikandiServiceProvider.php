@@ -97,6 +97,15 @@ class SrikandiServiceProvider extends ServiceProvider
             'srikandi.otp.read' => 'Membaca balasan OTP untuk polling (GET /otp-pending).',
             'srikandi.otp.write' => 'Meminta dan memverifikasi OTP.',
             'srikandi.naskah.write' => 'Mengirim hasil pembacaan list naskah dinas.',
+            'srikandi.client.read' => 'Membaca daftar client dan status readiness-nya (GET /clients).',
+            // 🔴 Scope paling sensitif di daftar ini: isinya username, password,
+            // TOTP secret, dan Gemini API key dalam bentuk PLAIN TEXT.
+            //
+            // Jangan pernah digabung dengan `srikandi.client.read`. Kalau
+            // gabung, token yang hanya perlu `GET /clients` untuk tear-down
+            // yang rapi ikut bisa mengambil semua kredensial client lain --
+            // dan tidak ada jejak pembedaannya di log akses.
+            'srikandi.client.credentials' => 'Mengambil kredensial login satu client (GET /clients/{slug}/credentials). Hanya untuk scraper yang sedang menjalankan siklus login.',
         ]);
     }
 
