@@ -98,6 +98,20 @@ function activityAttributes(string $subjectType): string
 
 function runClientsMigration(): void
 {
+    // 🔴 IDEMPOTEN, dan itu jadi wajib begitu migrasinya dipublish.
+    //
+    // Stub `.php.stub` tidak pernah di-migrate otomatis (konvensi repo: stub
+    // dipublish lewat `srikandi:publish-migration`), jadi test lama memanggil
+    // `up()` sendiri supaya tabel ada walau file-nya belum dipublish.
+    //
+    // Sekarang file-nya sudah ada di `database/migrations`, jadi
+    // `RefreshDatabase` ikut menjalankannya -- dan pemanggilan kedua gagal
+    // dengan "table already exists". Gejalanya 19 test gagal dengan pesan
+    // yang sama sekali tidak menyinggung migrasi.
+    if (Schema::hasTable('srikandi_clients')) {
+        return;
+    }
+
     $published = glob(database_path('migrations/*_create_srikandi_clients_table.php'));
 
     $source = $published !== [] ? $published[0] : __DIR__.'/../../database/migrations/create_srikandi_clients_table.php.stub';
