@@ -49,4 +49,29 @@ return [
         'unknown_year' => 0,
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Blind index untuk kolom terenkripsi
+    |--------------------------------------------------------------------------
+    |
+    | Dipakai `Bale\Srikandi\Support\BlindIndex` untuk menghitung `phone_index`
+    | dan `notify_phone_index`, supaya nomor yang terenkripsi tetap bisa dicari
+    | tanpa didekripsi.
+    |
+    | 🔴 WAJIB DIISI, DAN TIDAK BOLEH SAMA DENGAN `APP_KEY`.
+    |
+    | Nilai ini adalah kunci HMAC-SHA256, bukan kunci enkripsi. Kalau sama dengan
+    | `APP_KEY`, siapa pun yang punya kunci enkripsi (mis. dari `.env` yang bocor)
+    | bisa menghitung index sekaligus mencoba mendekripsi kolom -- dua mekanisme
+    | yang melindungi data runtun jadi satu. Tidak ada fallback ke `APP_KEY`
+    | sengaja: lebih baik error eksplisit daripada diam-diam memakai kunci sama.
+    |
+    | Mengganti nilai ini membuat seluruh `*_index` lama tidak berguna lagi.
+    | Field yang terenkripsi tetap bisa dibaca, tapi pencarian by-nomor mati
+    | sampai semua client disimpan ulang.
+    |
+    */
+
+    'index_key' => env('SRIKANDI_INDEX_KEY'),
+
 ];
