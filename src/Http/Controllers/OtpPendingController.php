@@ -10,6 +10,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\Rule;
 
 /**
  * GET /api/v1/srikandi/otp-pending (spec §5.2, kontrak v2 §5.0b).
@@ -31,10 +32,19 @@ class OtpPendingController extends SrikandiController
     public function __invoke(Request $request): JsonResponse
     {
         $validated = $request->validate([
+            'sumber' => [
+                'required',
+                'string',
+                'max:64',
+                'regex:/^[a-z0-9-]+$/',
+                Rule::exists('srikandi_clients', 'slug'),
+            ],
             'request_id' => ['nullable', 'string', 'max:64'],
             'phone' => ['nullable', 'string', 'max:32'],
             'after' => ['nullable', 'date'],
         ]);
+
+        $sumber = $validated['sumber'];
 
         $requestId = $this->blankToNull($validated['request_id'] ?? null);
         $rawPhone = $this->blankToNull($validated['phone'] ?? null);
@@ -53,8 +63,13 @@ class OtpPendingController extends SrikandiController
          * justru konsumen yang paling baru — atau, lebih buruk, mendorong
          * scraper menyimpan nomor itu supaya bisa memanggil endpoint ini. Itu
          * kebocoran yang justru dihapus oleh kontrak v2.
+         *
+         * 🔴 `sumber` diteruskan ke `findVerifiable()` supaya pencarian lewat
+         * `phone` tidak bisa masuk ke record client lain. Tanpa itu, satu token
+         * yang tahu nomor client lain bisa membaca isi jendela OTP-nya -- dan
+         * isi jendela itu adalah kode OTP Srikandi yang sah.
          */
-        $state = $this->otp->findVerifiable($rawPhone, $requestId);
+        $state = $this->otp->findVerifiable($sumber, $rawPhone, $requestId);
 
         // Gate: record harus hidup. Tanpa ini, jendela yang sudah `expired` atau
         // `verified` masih bisa membaca pesan lamanya.

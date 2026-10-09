@@ -10,10 +10,16 @@ return [
             'icon' => 'clipboard',
             'items' => [
                 [
-                    'label' => 'Status',
-                    'url' => 'srikandi/status',
-                    'icon' => 'list-checks',
-                    'permission' => 'srikandi.status.read',
+                    'label' => 'Client',
+                    'url' => 'srikandi/client',
+                    'icon' => 'users',
+                    'permission' => 'srikandi.client.read',
+                ],
+                [
+                    'label' => 'Naskah',
+                    'url' => 'srikandi/naskah',
+                    'icon' => 'file-text',
+                    'permission' => 'srikandi.naskah.read',
                 ],
             ],
         ],

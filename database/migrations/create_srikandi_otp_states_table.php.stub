@@ -59,27 +59,39 @@ return new class extends Migration
             $table->string('purpose', 32)->default('otp');
 
             /*
-             * 🔴 `sumber` PUNYA `DEFAULT 'default'` -- BERBEDA dari
-             * `srikandi_naskah.sumber` yang tidak punya. Ini bukan inkonsistensi,
-             * dan alasannya konsekuensi, bukan selera:
+             * 🔴 `sumber` TIDAK PUNYA DEFAULT -- sama dengan `srikandi_naskah`.
              *
-             * - Naskah yatim = dokumen resmi tersimpan di bawah client yang
-             *   kelihatan valid. Salah dan permanen.
-             * - State OTP yatim = jendela pending yang akan kedaluwarsa dalam
-             *   hitungan menit. Tidak ada yang ditampilkan salah, dan
-             *   `otp-pending` mencari lewat `phone_index`, bukan `sumber` --
-             *   jadi sumber yang keliru tidak membuat nomor salah terbaca.
+             * Versi pertama kolom ini punya `default('default')`, dengan alasan
+             * "naskah yatim lebih berbahaya daripada state OTP yatim". Alasan itu
+             * tidak salah, tapi PENGAKALANNYA sudah kedaluwarsa dan sekarang
+             * berbalik arah.
              *
-             * 🔴 Yang BENAR adalah `default('default')` sebagai placeholder
-             * sampai S3 mengikat token scraper ke client. Setelah itu, `sumber`
-             * di sini WAJIB diisi pemanggil dan default ini harus dihapus --
-             * sama seperti yang akan dilakukan di `srikandi_naskah`.
+             * Yang dipakai untuk membenarkan default itu: "`otp-pending` mencari
+             * lewat `phone_index`, bukan `sumber` -- jadi sumber yang keliru tidak
+             * membuat nomor salah terbaca." Canary itu benar waktu searching
+             * TIDAK memfilter `sumber`.
              *
-             * Menghapus default ini sekarang justru lebih buruk: `OtpService` belum
-             * tahu client mana yang memiliki jendela, jadi mengorbankan kebenaran
-             * demi aturan yang belum punya mekanismenya.
+             * Sekarang `findVerifiableByPhone()`, `findVerifiable()`, dan
+             * `lockLatestFor()` semuanya memfilter `sumber`. Artinya slug yang
+             * keliru tidak hanya salah label -- dia secara aktif membuat record
+             * client lain TIDAK bisa dibaca, dan record miliknya sendiri tidak
+             * ketemu. Di satu akun saja. Gejalanya "OTP tidak pernah sampai"
+             * untuk satu akun saja, tanpa jejak kegagalan.
+             *
+             * Dan argumen "default-nya placeholder sampai token scraper terikat
+             * ke client" juga sudah tidak berlaku: binding token belum ada,
+             * tapi tidak dibutuhkan untuk ditutup. Endpoint OTP sekarang mewajibkan
+             * `sumber` yang harus ada di `srikandi_clients`, jadi scraper menyatakan
+             * client mana yang dia tangani di setiap request. Dia tidak lagi
+             * diturunkan dari identitas token.
+             *
+             * Default `default` justrumenyembunyikan salah ketik: OTP tetap jalan
+             * dengan pemilik salah, dan tidak ada yang perlu diperbaiki.
+             *
+             * Paket belum production, jadi tidak ada data lama yang perlu backward
+             * compat.
              */
-            $table->string('sumber', 64)->default('default');
+            $table->string('sumber', 64);
 
             /*
              * 🔴 `TEXT`, bukan `VARCHAR(32)` seperti sebelumnya.

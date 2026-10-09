@@ -30,9 +30,9 @@ function callSrikandi(object $case, string $method, string $uri, array $payload,
 }
 
 $endpoints = [
-    ['post', '/api/v1/srikandi/otp-request', ['phone' => '628123456789']],
-    ['get', '/api/v1/srikandi/otp-pending?phone=628123456789', []],
-    ['post', '/api/v1/srikandi/otp-verify', ['phone' => '628123456789', 'code' => '123456']],
+    ['post', '/api/v1/srikandi/otp-request', ['phone' => '628123456789', 'sumber' => 'default']],
+    ['get', '/api/v1/srikandi/otp-pending?phone=628123456789&sumber=default', []],
+    ['post', '/api/v1/srikandi/otp-verify', ['phone' => '628123456789', 'code' => '123456', 'sumber' => 'default']],
     ['post', '/api/v1/srikandi/naskah-dinas', ['items' => []]],
 ];
 
@@ -56,7 +56,7 @@ describe('autentikasi & otorisasi endpoint (spec §7)', function () use ($endpoi
         $issued['model']->forceFill(['revoked_at' => now()])->save();
 
         $this->postJson('/api/v1/srikandi/otp-verify', [
-            'phone' => '628123456789', 'code' => '123456',
+            'phone' => '628123456789', 'code' => '123456', 'sumber' => 'default',
         ], asScraper($issued['plain']))->assertUnauthorized();
     });
 
@@ -65,7 +65,7 @@ describe('autentikasi & otorisasi endpoint (spec §7)', function () use ($endpoi
         $issued['model']->forceFill(['expires_at' => now()->subDay()])->save();
 
         $this->postJson('/api/v1/srikandi/otp-verify', [
-            'phone' => '628123456789', 'code' => '123456',
+            'phone' => '628123456789', 'code' => '123456', 'sumber' => 'default',
         ], asScraper($issued['plain']))->assertUnauthorized();
     });
 });
@@ -75,14 +75,14 @@ describe('pemisahan scope (spec §7)', function () {
         $plain = scraperToken(['srikandi.otp.read'])['plain'];
 
         $this->postJson('/api/v1/srikandi/otp-verify', [
-            'phone' => '628123456789', 'code' => '123456',
+            'phone' => '628123456789', 'code' => '123456', 'sumber' => 'default',
         ], asScraper($plain))->assertForbidden();
     });
 
     it('token hanya otp.read TETAP boleh polling', function () {
         $plain = scraperToken(['srikandi.otp.read'])['plain'];
 
-        $this->getJson('/api/v1/srikandi/otp-pending?phone=628123456789', asScraper($plain))
+        $this->getJson('/api/v1/srikandi/otp-pending?phone=628123456789&sumber=default', asScraper($plain))
             ->assertOk();
     });
 
@@ -90,14 +90,14 @@ describe('pemisahan scope (spec §7)', function () {
         $plain = scraperToken(['srikandi.naskah.write'])['plain'];
 
         $this->postJson('/api/v1/srikandi/otp-request', [
-            'phone' => '628123456789',
+            'phone' => '628123456789', 'sumber' => 'default',
         ], asScraper($plain))->assertForbidden();
     });
 
     it('token tanpa scope Srikandi apa pun ditolak di semua endpoint', function () {
         $plain = scraperToken(['api.read'])['plain'];
 
-        $this->postJson('/api/v1/srikandi/otp-request', ['phone' => '628123456789'], asScraper($plain))
+        $this->postJson('/api/v1/srikandi/otp-request', ['phone' => '628123456789', 'sumber' => 'default'], asScraper($plain))
             ->assertForbidden();
 
         $this->postJson('/api/v1/srikandi/naskah-dinas', [
@@ -177,7 +177,7 @@ describe('pemisahan scope (spec §7)', function () {
         // Tidak ada endpoint baca lain, tapi wildcard harus tetap diterima.
         $plain = scraperToken(['srikandi.otp.read'])['plain'];
 
-        $this->getJson('/api/v1/srikandi/otp-pending?phone=628123456789', asScraper($plain))
+        $this->getJson('/api/v1/srikandi/otp-pending?phone=628123456789&sumber=default', asScraper($plain))
             ->assertOk();
     });
 });
@@ -192,7 +192,7 @@ describe('throttle (spec §7)', function () {
 
         foreach (range(1, 9) as $ignored) {
             $lastStatus = $this->getJson(
-                '/api/v1/srikandi/otp-pending?phone=628123456789',
+                '/api/v1/srikandi/otp-pending?phone=628123456789&sumber=default',
                 asScraper($plain)
             )->status();
         }
@@ -207,10 +207,10 @@ describe('throttle (spec §7)', function () {
 
         $plain = scraperToken(['srikandi.otp.read'])['plain'];
 
-        $this->getJson('/api/v1/srikandi/otp-pending?phone=628123456789', asScraper($plain));
+        $this->getJson('/api/v1/srikandi/otp-pending?phone=628123456789&sumber=default', asScraper($plain));
 
         $throttled = $this->getJson(
-            '/api/v1/srikandi/otp-pending?phone=628123456789',
+            '/api/v1/srikandi/otp-pending?phone=628123456789&sumber=default',
             asScraper($plain)
         );
 
@@ -221,13 +221,13 @@ describe('throttle (spec §7)', function () {
 
 describe('penolakan data tidak valid', function () {
     it('otp-request menolak phone kosong', function () {
-        $this->postJson('/api/v1/srikandi/otp-request', ['phone' => ''], asScraper())
+        $this->postJson('/api/v1/srikandi/otp-request', ['phone' => '', 'sumber' => 'default'], asScraper())
             ->assertStatus(422);
     });
 
     it('otp-verify menolak kode kosong', function () {
         $this->postJson('/api/v1/srikandi/otp-verify', [
-            'phone' => '628123456789', 'code' => '',
+            'phone' => '628123456789', 'code' => '', 'sumber' => 'default',
         ], asScraper())->assertStatus(422);
     });
 
@@ -240,7 +240,7 @@ describe('penolakan data tidak valid', function () {
     });
 
     it('tidak pernah menulis record saat validasi gagal', function () {
-        $this->postJson('/api/v1/srikandi/otp-request', ['phone' => ''], asScraper())
+        $this->postJson('/api/v1/srikandi/otp-request', ['phone' => '', 'sumber' => 'default'], asScraper())
             ->assertStatus(422);
 
         expect(SrikandiOtpState::query()->count())->toBe(0);

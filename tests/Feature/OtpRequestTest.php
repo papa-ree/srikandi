@@ -14,6 +14,7 @@ describe('POST /otp-request (spec §5.1)', function () {
         seedSendableDevice();
 
         $response = $this->postJson('/api/v1/srikandi/otp-request', [
+            'sumber' => 'default',
             'phone' => '628123456789',
         ], asScraper());
 
@@ -29,10 +30,10 @@ describe('POST /otp-request (spec §5.1)', function () {
     it('IDEMPOTEN: dua kali panggil menghasilkan satu record dan satu pesan', function () {
         seedSendableDevice();
 
-        $this->postJson('/api/v1/srikandi/otp-request', ['phone' => '628123456789'], asScraper())
+        $this->postJson('/api/v1/srikandi/otp-request', ['sumber' => 'default', 'phone' => '628123456789'], asScraper())
             ->assertCreated();
 
-        $second = $this->postJson('/api/v1/srikandi/otp-request', ['phone' => '628123456789'], asScraper());
+        $second = $this->postJson('/api/v1/srikandi/otp-request', ['sumber' => 'default', 'phone' => '628123456789'], asScraper());
 
         $second->assertOk();
 
@@ -45,8 +46,8 @@ describe('POST /otp-request (spec §5.1)', function () {
     it('mengembalikan record yang sama pada panggilan kedua, bukan record baru', function () {
         seedSendableDevice();
 
-        $first = $this->postJson('/api/v1/srikandi/otp-request', ['phone' => '628123456789'], asScraper());
-        $second = $this->postJson('/api/v1/srikandi/otp-request', ['phone' => '628123456789'], asScraper());
+        $first = $this->postJson('/api/v1/srikandi/otp-request', ['sumber' => 'default', 'phone' => '628123456789'], asScraper());
+        $second = $this->postJson('/api/v1/srikandi/otp-request', ['sumber' => 'default', 'phone' => '628123456789'], asScraper());
 
         expect($first->json('state_id'))->toBe($second->json('state_id'));
     });
@@ -55,6 +56,7 @@ describe('POST /otp-request (spec §5.1)', function () {
         seedSendableDevice();
 
         $response = $this->postJson('/api/v1/srikandi/otp-request', [
+            'sumber' => 'default',
             'phone' => '628123456789',
         ], asScraper());
 
@@ -66,7 +68,7 @@ describe('POST /otp-request (spec §5.1)', function () {
     });
 
     it('menolak nomor tidak valid dengan 422', function () {
-        $this->postJson('/api/v1/srikandi/otp-request', ['phone' => 'abc'], asScraper())
+        $this->postJson('/api/v1/srikandi/otp-request', ['sumber' => 'default', 'phone' => 'abc'], asScraper())
             ->assertStatus(422);
 
         expect(SrikandiOtpState::query()->count())->toBe(0);
@@ -75,7 +77,7 @@ describe('POST /otp-request (spec §5.1)', function () {
     it('menormalkan nomor lokal 08xx ke format internasional', function () {
         seedSendableDevice();
 
-        $this->postJson('/api/v1/srikandi/otp-request', ['phone' => '08123456789'], asScraper())
+        $this->postJson('/api/v1/srikandi/otp-request', ['sumber' => 'default', 'phone' => '08123456789'], asScraper())
             ->assertCreated();
 
         expect(SrikandiOtpState::query()->first()->phone)->toBe('628123456789');
@@ -83,7 +85,7 @@ describe('POST /otp-request (spec §5.1)', function () {
 
     it('mengexpiredkan record dan gagal bila device tidak bisa kirim', function () {
         // Tidak ada device sama sekali -> resolusi gagal.
-        $this->postJson('/api/v1/srikandi/otp-request', ['phone' => '628123456789'], asScraper())
+        $this->postJson('/api/v1/srikandi/otp-request', ['sumber' => 'default', 'phone' => '628123456789'], asScraper())
             ->assertStatus(422);
 
         // Record TIDAK boleh tertinggal `pending`: itu akan mengunci nomor
@@ -98,6 +100,7 @@ describe('POST /otp-request (spec §5.1)', function () {
         seedSendableDevice();
 
         $this->postJson('/api/v1/srikandi/otp-request', [
+            'sumber' => 'default',
             'phone' => '628123456789',
             'purpose' => 'otp',
             'session_key' => 'wago-prod',
@@ -114,7 +117,7 @@ describe('penyimpanan kode OTP (spec §5.1, §7)', function () {
     it('menyimpan kode sebagai hash, bukan polos', function () {
         seedSendableDevice();
 
-        $this->postJson('/api/v1/srikandi/otp-request', ['phone' => '628123456789'], asScraper())
+        $this->postJson('/api/v1/srikandi/otp-request', ['sumber' => 'default', 'phone' => '628123456789'], asScraper())
             ->assertCreated();
 
         $hash = (string) SrikandiOtpState::query()->first()->getAttribute('code_hash');
@@ -139,7 +142,7 @@ describe('penyimpanan kode OTP (spec §5.1, §7)', function () {
 
         seedSendableDevice();
 
-        $this->postJson('/api/v1/srikandi/otp-request', ['phone' => '628123456789'], asScraper())
+        $this->postJson('/api/v1/srikandi/otp-request', ['sumber' => 'default', 'phone' => '628123456789'], asScraper())
             ->assertCreated();
 
         // Ambil kode yang benar-benar terkirim ke gateway.
@@ -160,6 +163,7 @@ describe('penyimpanan kode OTP (spec §5.1, §7)', function () {
         $wrong = $code === '000000' ? '111111' : '000000';
 
         $this->postJson('/api/v1/srikandi/otp-verify', [
+            'sumber' => 'default',
             'phone' => '628123456789',
             'code' => $wrong,
         ], asScraper())->assertStatus(422);
@@ -174,7 +178,7 @@ describe('penyimpanan kode OTP (spec §5.1, §7)', function () {
     it('menyembunyikan code_hash dari serialisasi model', function () {
         seedSendableDevice();
 
-        $this->postJson('/api/v1/srikandi/otp-request', ['phone' => '628123456789'], asScraper())
+        $this->postJson('/api/v1/srikandi/otp-request', ['sumber' => 'default', 'phone' => '628123456789'], asScraper())
             ->assertCreated();
 
         $array = SrikandiOtpState::query()->first()->toArray();

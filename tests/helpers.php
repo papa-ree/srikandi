@@ -16,10 +16,12 @@
 use Bale\Api\Models\ApiToken;
 use Bale\Api\Services\TokenManager;
 use Bale\Srikandi\Commands\InstallCommand;
+use Bale\Srikandi\Models\SrikandiClient;
 use Bale\Srikandi\Models\SrikandiOtpState;
 use Bale\Srikandi\SrikandiServiceProvider;
 use Bale\Srikandi\Support\OtpCode;
 use Bale\Wara\Models\WaraClient;
+use Bale\Wara\Models\WaraLog;
 use Bale\Wara\Models\WaraRoute;
 use Bale\Wara\Models\WaraSession;
 use Bale\Wara\WaraServiceProvider;
@@ -73,6 +75,23 @@ function srikandiSetup(): Closure
         // Nilai di sini sengaja BUKAN `APP_KEY`, supaya test juga membuktikan
         // keduanya memang dipisah.
         config()->set('srikandi.index_key', 'kunci-index-test-yang-berbeda-dari-app-key');
+
+        /*
+         * 🔴 Client `default` dibuat di setup, BUKAN di tiap test.
+         *
+         * Ketiga endpoint OTP sekarang mewajibkan `sumber` yang harus ada di
+         * `srikandi_clients`, jadi hampir semua test di package ini butuh client
+         * itu benar-benar ada. Kalau tiap test membuatnya sendiri, menambah test
+         * baru berarti harus ingat -- dan test yang lupa gagal dengan 422 yang
+         * menyesatkan, bukan karena ada yang salah dengan OTP-nya.
+         *
+         * Sengaja TIDAK memakai kredensial. Test yang butuh kredensial memakai
+         * `SrikandiClientCredentialTest`, yang memang harus mengisinya.
+         */
+        SrikandiClient::query()->firstOrCreate(
+            ['slug' => 'default'],
+            ['nama' => 'Client Default'],
+        );
 
         Http::preventStrayRequests();
         Http::fake([
@@ -235,6 +254,42 @@ function otpTestDeviceId(): string
 }
 
 /**
+ * Catat satu pesan masuk untuk device tertentu, seperti webhook GOWA.
+ *
+ * 🔴 `$phone` adalah PENGIRIM (`chat_id`), `$deviceId` adalah PENERIMA.
+ * Parameter dipisah karena keduanya tidak boleh tertukar: polling menyaring
+ * `device_id`, dan bug yang diperbaiki pada 1 Okt 2026 justru karena keduanya
+ * dicampur.
+ *
+ * 🔴 Fungsi ini TIDAK boleh dipanggil tanpa alasan untuk membuktikan isolasi
+ * client.
+ *
+ * `otp-pending` mengembalikan `replies: []` untuk dua kondisi yang sangat
+ * berbeda: record memang tidak ditemukan, ATAU record ditemukan tapi memang
+ * tidak ada pesannya. Kalau test tidak menyemai satu pun pesan, keduanya
+ * terlihat sama persis di assertion -- dan test yang "lolos" itu tidak
+ * membuktikan apa pun. Menyemai pesan nyata membuat `replies: []` berarti
+ * "sumber daya tidak ditemukan", bukan "tidak ada apa-apa untuk dikembalikan".
+ */
+function seedIncoming(
+    string $phone,
+    string $body,
+    ?string $messageId = null,
+    ?string $deviceId = null,
+): WaraLog {
+    return WaraLog::query()->create([
+        'direction' => 'in',
+        'event' => 'message',
+        'device_id' => $deviceId ?? otpTestDeviceId(),
+        'chat_id' => $phone.'@s.whatsapp.net',
+        'phone' => $phone,
+        'message_id' => $messageId ?? ('msg-'.uniqid()),
+        'body' => $body,
+        'status' => 'received',
+    ]);
+}
+
+/**
  * Record OTP pending dengan kode yang dipilih pemanggil.
  *
  * Kode polos dikembalikan ke TEST, bukan ke production code, supaya test bisa
@@ -254,6 +309,7 @@ function seedPendingOtp(string $phone, string $code, array $attributes = []): Sr
     $state = new SrikandiOtpState(array_merge([
         'request_id' => (string) Str::uuid(),
         'purpose' => 'otp',
+        'sumber' => 'default',
         'phone' => $phone,
         'state' => SrikandiOtpState::STATE_PENDING,
         'attempts' => 0,

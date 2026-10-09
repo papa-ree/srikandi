@@ -24,7 +24,7 @@ uses(RefreshDatabase::class)
 function sanitizerClient(): SrikandiClient
 {
     $client = SrikandiClient::query()->create([
-        'slug' => 'default',
+        'slug' => 'uji-sanitasi',
         'nama' => 'Client Uji',
     ]);
 
@@ -152,7 +152,7 @@ describe('sanitasi di heartbeat', function () {
     it('TIDAK menyimpan kredensial yang ada di pesan error', function () {
         $client = sanitizerClient();
 
-        $this->postJson('/api/v1/srikandi/clients/default/heartbeat', [
+        $this->postJson('/api/v1/srikandi/clients/'.$client->slug.'/heartbeat', [
             'error_at' => now()->toIso8601String(),
             'error_message' => 'Gagal: https://srikandi.go.id/login?password=RahasiaDariScraper123',
         ], asScraper())->assertOk();
@@ -169,9 +169,9 @@ describe('sanitasi di heartbeat', function () {
     });
 
     it('TIDAK mengirim pesan error mentah di response heartbeat', function () {
-        sanitizerClient();
+        $client = sanitizerClient();
 
-        $response = $this->postJson('/api/v1/srikandi/clients/default/heartbeat', [
+        $response = $this->postJson('/api/v1/srikandi/clients/'.$client->slug.'/heartbeat', [
             'error_at' => now()->toIso8601String(),
             'error_message' => 'Gagal: ?token=RahasiaToken123',
         ], asScraper());

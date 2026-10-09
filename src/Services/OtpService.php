@@ -11,6 +11,7 @@ use Bale\Wara\Models\WaraRoute;
 use Bale\Wara\Models\WaraSession;
 use Bale\Wara\Support\DeviceRouter;
 use Bale\Wara\WaraManager;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -60,9 +61,18 @@ class OtpService
      * yang dipakai, supaya pemakaian internal/admin tidak bisa diam-diam dialihkan
      * ke device.
      *
+     * 🔴 `$sumber` WAJIB, dan sengaja jadi parameter PERTAMA.
+     *
+     * Kolom `srikandi_otp_states.sumber` sudah `NOT NULL` tanpa default, jadi
+     * nullable di sini hanya berarti ada jalur PHP yang bisa membangun state
+     * yatim. Default `'default'` sengaja dihapus supaya tidak ada lagi record OTP
+     * yang tidak diketahui pemiliknya; itu juga alasan parameter ini tidak
+     * boleh punya nilai bawaan.
+     *
      * @throws SrikandiException
      */
     public function openWindow(
+        string $sumber,
         ?string $rawPhone = null,
         ?string $purpose = null,
         ?string $sessionKey = null,
@@ -71,13 +81,14 @@ class OtpService
 
         [$phone, $deviceId] = $this->resolveTargetPhone($rawPhone, $purpose);
 
-        $existing = $this->findVerifiableByPhone($phone);
+        $existing = $this->findVerifiableByPhone($phone, $sumber);
 
         if ($existing !== null) {
             return $existing;
         }
 
         $state = new SrikandiOtpState([
+            'sumber' => $sumber,
             'request_id' => (string) Str::uuid(),
             'purpose' => $purpose,
             'phone' => $phone,
@@ -267,14 +278,21 @@ class OtpService
      * ulang tanpa alasan adalah pemicu restriksi akun yang paling sering terjadi
      * di Srikandi.
      *
+     * 🔴 `$sumber` WAJIB dan jadi parameter PERTAMA, alasan yang sama seperti di
+     * `openWindow()`.
+     *
      * @throws SrikandiException
      */
-    public function requestOtp(string $rawPhone, ?string $purpose = null, ?string $sessionKey = null): SrikandiOtpState
-    {
+    public function requestOtp(
+        string $sumber,
+        string $rawPhone,
+        ?string $purpose = null,
+        ?string $sessionKey = null,
+    ): SrikandiOtpState {
         $phone = $this->requirePhone($rawPhone);
         $purpose = $this->resolvePurpose($purpose);
 
-        $existing = $this->findVerifiableByPhone($phone);
+        $existing = $this->findVerifiableByPhone($phone, $sumber);
 
         if ($existing !== null) {
             return $existing;
@@ -283,6 +301,7 @@ class OtpService
         $code = OtpCode::generate((int) config('srikandi.otp.code_length', 6));
 
         $state = new SrikandiOtpState([
+            'sumber' => $sumber,
             'request_id' => (string) Str::uuid(),
             'purpose' => $purpose,
             'phone' => $phone,
@@ -380,9 +399,14 @@ class OtpService
      * Identitas dicari lewat `request_id` lebih dulu; kalau tidak ketemu, fallback
      * ke `phone` supaya konsumen lama yang belum memakai kontrak v2 tetap jalan.
      *
+     * 🔴 `$sumber` WAJIB dan jadi parameter PERTAMA, alasan yang sama seperti di
+     * `openWindow()`. Kode OTP milik client lain tidak boleh diverifikasi hanya
+     * karena pemanggil tahu nomornya.
+     *
      * @throws SrikandiException
      */
     public function verifyOtp(
+        string $sumber,
         string $rawCode,
         ?string $rawPhone = null,
         ?string $requestId = null,
@@ -408,8 +432,8 @@ class OtpService
          * Jadi closure mengembalikan hasilnya, dan exception dilempar DI LUAR
          * transaksi — setelah perubahannya sudah ter-commit.
          */
-        $outcome = DB::transaction(function () use ($rawCode, $rawPhone, $requestId) {
-            $state = $this->lockLatestFor($rawPhone, $requestId);
+        $outcome = DB::transaction(function () use ($rawCode, $rawPhone, $requestId, $sumber) {
+            $state = $this->lockLatestFor($sumber, $rawPhone, $requestId);
 
             if ($state === null) {
                 return ['error' => SrikandiException::notFound(
@@ -546,23 +570,62 @@ class OtpService
      * Dipakai untuk menemukan jendela aktif yang cocok, sehingga permintaan
      * kedua memakai jendela yang sama alih-alih membuka yang baru.
      */
-    public function findVerifiableByPhone(string $phone): ?SrikandiOtpState
+    public function findVerifiableByPhone(string $phone, string $sumber): ?SrikandiOtpState
     {
-        return SrikandiOtpState::query()
+        $query = SrikandiOtpState::query()
             ->wherePhone($phone)
             ->where('state', SrikandiOtpState::STATE_PENDING)
-            ->where('expires_at', '>', now())
+            ->where('expires_at', '>', now());
+
+        /*
+         * 🔴 FILTER `sumber` BUKAN OPSIONAL. Ini yang mencegah dua akun SRIKANDI
+         * yang kebetulan memakai nomor sama saling menimpa.
+         *
+         * Tanpa filter ini, permintaan OTP kedua yang datang dengan nomor yang
+         * sama tapi client berbeda akan menemukan record milik client pertama,
+         * lalu `requestOtp()` mengembalikan record itu apa adanya karena
+         * "sudah ada yang pending". Efeknya: client kedua diam-diam tidak
+         * pernah menerima kode, dan tidak ada satu pun error yang muncul --
+         * karena memang tidak ada yang gagal, hanya tidak ada yang terjadi.
+         *
+         * Gejalanya di lapangan adalah "OTP-nya tidak pernah sampai" untuk satu
+         * akun saja, sementara akun lain normal. Itu symptom yang mahal untuk
+         * didiagnosis karena tidak ada jejak kegagalan sama sekali.
+         */
+        $this->restrictToSumber($query, $sumber);
+
+        return $query
             ->orderByDesc('created_at')
             ->first();
     }
 
     /**
      * Record hidup berdasarkan `request_id` (jalur kontrak v2).
+     *
+     * 🔴 `request_id` TIDAK sendirinya sudah cukup, dan itu tidak bisa diasumsikan.
+     *
+     * Argumen "UUID-nya unik, jadi tidak perlu dicek" itu benar secara
+     * probabilitas tapi salah untuk lapisan ini. `request_id` datang lewat
+     * jaringan; selama token belum terikat ke client (itu pekerjaan S3
+     * berikutnya), siapa pun yang memegang token Srikandi bisa mengirim
+     * `request_id` milik client lain bersama `sumber` miliknya sendiri.
+     *
+     * Kalau slug tidak ikut dicek, tidak ada yang memberi tahu: pemanggil melihat
+     * `200` atau `verified` untuk jendela yang bukan miliknya, dan isi `replies`
+     * dari device orang lain ikut terbawa. Unik tidak berarti tidak bisa
+     * diambil orang -- yang menentukan adalah apakah PEMILIK-nya cocok, bukan
+     * apakah ID-nya unik.
+     *
+     * Jadi `request_id` dan `sumber` selalu dievaluasi BERSAMA. Slug yang tidak
+     * cocok diperlakukan sebagai "tidak ditemukan", bukan error: dari sisi
+     * pemanggil itu memang tidak ada jendela miliknya, dan membocorkan
+     * keberadaan jendela orang lain lewat pesan error sudah jadi kebocoran.
      */
-    public function findByRequestId(string $requestId): ?SrikandiOtpState
+    public function findByRequestId(string $requestId, string $sumber): ?SrikandiOtpState
     {
         return SrikandiOtpState::query()
             ->where('request_id', $requestId)
+            ->where('sumber', $sumber)
             ->first();
     }
 
@@ -577,21 +640,38 @@ class OtpService
      * supaya `otp-pending` bisa membedakan "tidak ada" dari "sudah tutup",
      * dan `otp-verify` bisa mengembalikan `410` lengkap dengan perubahan state-nya.
      */
-    public function findVerifiable(?string $rawPhone = null, ?string $requestId = null): ?SrikandiOtpState
+    public function findVerifiable(string $sumber, ?string $rawPhone = null, ?string $requestId = null): ?SrikandiOtpState
     {
         if ($requestId !== null && trim($requestId) !== '') {
-            $byRequestId = $this->findByRequestId(trim($requestId));
+            $byRequestId = $this->findByRequestId(trim($requestId), $sumber);
 
             if ($byRequestId !== null) {
                 return $byRequestId;
             }
+
+            /*
+             * 🔴 `request_id` ada tapi slug-nya tidak cocok: JANGAN jatuh ke jalur
+             * `phone` di bawah dengan diam-diam.
+             *
+             * Dua client sah bisa saja punya nomor yang sama persis. Kalau
+             * `request_id` milik client A dikirim bersama `sumber` client B,
+             * lalu pencarian lanjut ke nomor, hasilnya record A yang aktif --
+             * dan pemanggil B ikut membaca `replies` dari device A. Dia mungkin
+             * tidak merasa memakai `request_id` itu, tapi jalan tetap salah.
+             *
+             * Ketidakcocokan di sini berarti pemanggil salah mengetikkan
+             * `request_id` miliknya sendiri, jadi "tidak ditemukan" adalah
+             * jawaban yang benar.
+             */
+            return null;
         }
 
         if ($rawPhone !== null && trim($rawPhone) !== '') {
-            return SrikandiOtpState::query()
-                ->wherePhone($this->requirePhone($rawPhone))
-                ->orderByDesc('created_at')
-                ->first();
+            $query = SrikandiOtpState::query()->wherePhone($this->requirePhone($rawPhone));
+
+            $this->restrictToSumber($query, $sumber);
+
+            return $query->orderByDesc('created_at')->first();
         }
 
         return null;
@@ -600,29 +680,51 @@ class OtpService
     /**
      * Row paling relevan untuk diverifikasi, terkunci untuk pembaruan.
      */
-    protected function lockLatestFor(?string $rawPhone, ?string $requestId): ?SrikandiOtpState
+    protected function lockLatestFor(string $sumber, ?string $rawPhone, ?string $requestId): ?SrikandiOtpState
     {
-        $query = SrikandiOtpState::query();
-
         if ($requestId !== null && trim($requestId) !== '') {
-            $state = $query->where('request_id', trim($requestId))
+            // 🔴 Filter `sumber` berlaku di jalur `lockForUpdate()` juga, dengan
+            // alasan yang sama seperti di `findVerifiable()`. Kalau tidak, locks
+            // masih bisa diambil untuk record client lain dan `attempts`-nya
+            // naik untuk jendela yang bukan miliknya.
+            $state = SrikandiOtpState::query()
+                ->where('request_id', trim($requestId))
+                ->where('sumber', $sumber)
                 ->lockForUpdate()
                 ->first();
 
             if ($state !== null) {
                 return $state;
             }
+
+            return null;
         }
 
         if ($rawPhone !== null && trim($rawPhone) !== '') {
-            return SrikandiOtpState::query()
-                ->wherePhone($this->requirePhone($rawPhone))
-                ->orderByDesc('created_at')
-                ->lockForUpdate()
-                ->first();
+            $phoneQuery = SrikandiOtpState::query()->wherePhone($this->requirePhone($rawPhone));
+
+            $this->restrictToSumber($phoneQuery, $sumber);
+
+            return $phoneQuery->orderByDesc('created_at')->lockForUpdate()->first();
         }
 
         return null;
+    }
+
+    /**
+     * 🔴 Batasi query ke satu client, dan JANGAN diam-diam jadi tanpa filter.
+     *
+     * Helper ini ada supaya tidak ada jalur yang bisa "lupa" memfilter sumber.
+     * Karena `$sumber` sudah wajib dan tidak bisa `null`, tidak ada lagi
+     * kondisi yang harus diterjemahkan: setiap query dijaga tepat satu client.
+     *
+     * Kolomnya `NOT NULL` tanpa default sejak penghapusan default `'default'`,
+     * jadi di tabel production semua baris punya sumber dan tidak ada record
+     * lama yang bisa masuk lewat filter yang longgar.
+     */
+    protected function restrictToSumber(Builder $query, string $sumber): void
+    {
+        $query->where('sumber', $sumber);
     }
 
     protected function requirePhone(string $rawPhone): string

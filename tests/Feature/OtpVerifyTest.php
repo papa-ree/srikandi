@@ -13,6 +13,7 @@ describe('POST /otp-verify (spec §5.3)', function () {
         $state = seedPendingOtp('628123456789', '123456');
 
         $this->postJson('/api/v1/srikandi/otp-verify', [
+            'sumber' => 'default',
             'phone' => '628123456789',
             'code' => '123456',
         ], asScraper())
@@ -28,10 +29,12 @@ describe('POST /otp-verify (spec §5.3)', function () {
         seedPendingOtp('628123456789', '123456');
 
         $first = $this->postJson('/api/v1/srikandi/otp-verify', [
+            'sumber' => 'default',
             'phone' => '628123456789', 'code' => '123456',
         ], asScraper());
 
         $second = $this->postJson('/api/v1/srikandi/otp-verify', [
+            'sumber' => 'default',
             'phone' => '628123456789', 'code' => '123456',
         ], asScraper());
 
@@ -43,6 +46,7 @@ describe('POST /otp-verify (spec §5.3)', function () {
         $state = seedPendingOtp('628123456789', '123456');
 
         $this->postJson('/api/v1/srikandi/otp-verify', [
+            'sumber' => 'default',
             'phone' => '628123456789', 'code' => '123456',
         ], asScraper())->assertOk();
 
@@ -51,6 +55,7 @@ describe('POST /otp-verify (spec §5.3)', function () {
         $this->travel(5)->minutes();
 
         $this->postJson('/api/v1/srikandi/otp-verify', [
+            'sumber' => 'default',
             'phone' => '628123456789', 'code' => '123456',
         ], asScraper())->assertOk();
 
@@ -62,6 +67,7 @@ describe('POST /otp-verify (spec §5.3)', function () {
         $state = seedPendingOtp('628123456789', '123456');
 
         $this->postJson('/api/v1/srikandi/otp-verify', [
+            'sumber' => 'default',
             'phone' => '628123456789', 'code' => '999999',
         ], asScraper())
             ->assertStatus(422)
@@ -76,6 +82,7 @@ describe('POST /otp-verify (spec §5.3)', function () {
         seedPendingOtp('628123456789', '123456');
 
         $response = $this->postJson('/api/v1/srikandi/otp-verify', [
+            'sumber' => 'default',
             'phone' => '628123456789', 'code' => '999999',
         ], asScraper());
 
@@ -88,6 +95,7 @@ describe('POST /otp-verify (spec §5.3)', function () {
         ]);
 
         $this->postJson('/api/v1/srikandi/otp-verify', [
+            'sumber' => 'default',
             'phone' => '628123456789', 'code' => '123456',
         ], asScraper())
             ->assertStatus(410)
@@ -100,6 +108,7 @@ describe('POST /otp-verify (spec §5.3)', function () {
         seedPendingOtp('628123456789', '123456', ['expires_at' => now()->subMinute()]);
 
         $response = $this->postJson('/api/v1/srikandi/otp-verify', [
+            'sumber' => 'default',
             'phone' => '628123456789', 'code' => '123456',
         ], asScraper());
 
@@ -112,6 +121,7 @@ describe('POST /otp-verify (spec §5.3)', function () {
         $state = seedPendingOtp('628123456789', '123456');
 
         $this->postJson('/api/v1/srikandi/otp-verify', [
+            'sumber' => 'default',
             'phone' => '628123456789', 'code' => '123456',
         ], asScraper())->assertOk();
 
@@ -120,6 +130,7 @@ describe('POST /otp-verify (spec §5.3)', function () {
         // Idempoten menang atas waktu: scraper yang timeout lalu mencoba ulang
         // tidak boleh melihat 410 untuk kode yang sudah berhasil.
         $this->postJson('/api/v1/srikandi/otp-verify', [
+            'sumber' => 'default',
             'phone' => '628123456789', 'code' => '123456',
         ], asScraper())
             ->assertOk()
@@ -133,6 +144,7 @@ describe('POST /otp-verify (spec §5.3)', function () {
 
         foreach (range(1, 2) as $ignored) {
             $this->postJson('/api/v1/srikandi/otp-verify', [
+                'sumber' => 'default',
                 'phone' => '628123456789', 'code' => '999999',
             ], asScraper())->assertStatus(422);
         }
@@ -141,6 +153,7 @@ describe('POST /otp-verify (spec §5.3)', function () {
 
         // Percobaan ketiga menyentuh batas -> expired.
         $this->postJson('/api/v1/srikandi/otp-verify', [
+            'sumber' => 'default',
             'phone' => '628123456789', 'code' => '999999',
         ], asScraper())->assertStatus(429);
 
@@ -155,6 +168,7 @@ describe('POST /otp-verify (spec §5.3)', function () {
 
         foreach (range(1, 3) as $ignored) {
             $this->postJson('/api/v1/srikandi/otp-verify', [
+                'sumber' => 'default',
                 'phone' => '628123456789', 'code' => '999999',
             ], asScraper());
         }
@@ -162,6 +176,7 @@ describe('POST /otp-verify (spec §5.3)', function () {
         expect($state->refresh()->state)->toBe(SrikandiOtpState::STATE_EXPIRED);
 
         $this->postJson('/api/v1/srikandi/otp-verify', [
+            'sumber' => 'default',
             'phone' => '628123456789', 'code' => '123456',
         ], asScraper())->assertStatus(410);
     });
@@ -170,6 +185,7 @@ describe('POST /otp-verify (spec §5.3)', function () {
         $state = seedPendingOtp('628123456789', '123456');
 
         $this->postJson('/api/v1/srikandi/otp-verify', [
+            'sumber' => 'default',
             'phone' => '628123456789', 'code' => '123',
         ], asScraper())->assertStatus(422);
 
@@ -181,6 +197,7 @@ describe('POST /otp-verify (spec §5.3)', function () {
         $state = seedPendingOtp('628123456789', '123456');
 
         $this->postJson('/api/v1/srikandi/otp-verify', [
+            'sumber' => 'default',
             'phone' => '628123456789', 'code' => '123 456',
         ], asScraper())
             ->assertOk()
@@ -189,6 +206,7 @@ describe('POST /otp-verify (spec §5.3)', function () {
 
     it('mengembalikan 404 bila tidak ada permintaan untuk nomor itu', function () {
         $this->postJson('/api/v1/srikandi/otp-verify', [
+            'sumber' => 'default',
             'phone' => '628999999999', 'code' => '123456',
         ], asScraper())->assertStatus(404);
     });
@@ -197,6 +215,7 @@ describe('POST /otp-verify (spec §5.3)', function () {
         $state = seedPendingOtp('628123456789', '123456');
 
         $this->postJson('/api/v1/srikandi/otp-verify', [
+            'sumber' => 'default',
             'phone' => '08123456789', 'code' => '123456',
         ], asScraper())->assertOk();
     });
@@ -211,10 +230,12 @@ describe('penetapan attempts di bawah lock (spec §5.3)', function () {
         // Verifikasi berurutan meniru dua request yang tumpang tindih; tanpa
         // `lockForUpdate` keduanya membaca attempts=0 lalu menulis 1.
         $this->postJson('/api/v1/srikandi/otp-verify', [
+            'sumber' => 'default',
             'phone' => '628123456789', 'code' => '999999',
         ], asScraper());
 
         $this->postJson('/api/v1/srikandi/otp-verify', [
+            'sumber' => 'default',
             'phone' => '628123456789', 'code' => '999999',
         ], asScraper());
 

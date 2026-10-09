@@ -7,6 +7,7 @@ use Bale\Srikandi\Services\OtpService;
 use Bale\Srikandi\Support\PhoneMask;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 /**
  * POST /api/v1/srikandi/otp-request (spec §5.1, kontrak v2 §5.0b).
@@ -30,10 +31,40 @@ class OtpRequestController extends SrikandiController
     public function __invoke(Request $request, OtpService $otp): JsonResponse
     {
         $validated = $request->validate([
+            'sumber' => [
+                'required',
+                'string',
+                'max:64',
+                'regex:/^[a-z0-9-]+$/',
+                Rule::exists('srikandi_clients', 'slug'),
+            ],
             'phone' => ['nullable', 'string', 'max:32'],
             'purpose' => ['nullable', 'string', 'max:32'],
             'session_key' => ['nullable', 'string', 'max:191'],
         ]);
+
+        /*
+         * 🔴 `sumber` WAJIB, bukan opsional dengan fallback `default`.
+         *
+         * Kolom `srikandi_otp_states.sumber` sebelumnya punya default `'default'`.
+         * Default itu berarti setiap permintaan OTP -- dari akun mana pun --
+         * tersimpan seolah-olah milik satu client yang sama. Waktu satu instalasi
+         * punya beberapa akun, nomor yang sama bisa dipakai dua akun, dan
+         * permintaan kedua diam-diam memakai record milik akun pertama.
+         *
+         * Gejalanya tidak pernah jadi error: `requestOtp()` yang idempoten
+         * mengembalikan record yang sudah ada "karena sudah ada yang pending".
+         * Akun kedua tidak pernah menerima kode, dan tidak ada satu pun jejak
+         * kegagalan. Itu symptom yang mahal untuk didiagnosis.
+         *
+         * Fallback `default` juga MENYEMBUNYIKAN bug konfigurasi. Kalau scraper
+         * salah mengetik slug, menebak `default` membuat OTP tetap jalan dengan
+         * pemilik salah; 422 memberi tahu slug mana yang salah.
+         *
+         * Default `'default'` di migrasi sudah dihapus. Paket belum production,
+         * jadi tidak ada data lama yang perlu backward compat.
+         */
+        $sumber = $validated['sumber'];
 
         $phone = $validated['phone'] ?? null;
         $purpose = $validated['purpose'] ?? null;
@@ -41,13 +72,13 @@ class OtpRequestController extends SrikandiController
 
         try {
             if ($phone !== null && trim($phone) !== '') {
-                $state = $otp->requestOtp($phone, $purpose, $sessionKey);
+                $state = $otp->requestOtp($sumber, $phone, $purpose, $sessionKey);
             } else {
-                // Argumen pertama `openWindow()` adalah `$rawPhone`, dan sengaja
+                // Argumen kedua `openWindow()` adalah `$rawPhone`, dan sengaja
                 // NULL di sini: justru emptiness-nya yang memilih jalur jendela.
                 // Mengoper `$purpose` ke posisi itu akan membuat purpose ikut
                 // diperlakukan sebagai nomor telepon.
-                $state = $otp->openWindow(null, $purpose, $sessionKey);
+                $state = $otp->openWindow($sumber, null, $purpose, $sessionKey);
             }
         } catch (SrikandiException $e) {
             return $this->failure($e);

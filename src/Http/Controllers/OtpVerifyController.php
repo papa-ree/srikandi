@@ -6,6 +6,7 @@ use Bale\Srikandi\Exceptions\SrikandiException;
 use Bale\Srikandi\Services\OtpService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 /**
  * POST /api/v1/srikandi/otp-verify (spec §5.3, kontrak v2 §5.0b).
@@ -26,6 +27,13 @@ class OtpVerifyController extends SrikandiController
     public function __invoke(Request $request): JsonResponse
     {
         $validated = $request->validate([
+            'sumber' => [
+                'required',
+                'string',
+                'max:64',
+                'regex:/^[a-z0-9-]+$/',
+                Rule::exists('srikandi_clients', 'slug'),
+            ],
             'request_id' => ['nullable', 'string', 'max:64'],
             'phone' => ['nullable', 'string', 'max:32'],
             'code' => ['required', 'string', 'max:32'],
@@ -44,7 +52,7 @@ class OtpVerifyController extends SrikandiController
         }
 
         try {
-            $state = $this->otp->verifyOtp($validated['code'], $phone, $requestId);
+            $state = $this->otp->verifyOtp($validated['sumber'], $validated['code'], $phone, $requestId);
         } catch (SrikandiException $e) {
             return $this->failure($e);
         } catch (\Throwable $e) {

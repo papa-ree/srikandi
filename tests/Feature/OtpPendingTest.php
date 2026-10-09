@@ -9,38 +9,18 @@ require_once __DIR__.'/../helpers.php';
 uses(RefreshDatabase::class)
     ->beforeEach(srikandiSetup());
 
-/**
- * Catat satu pesan masuk untuk device tertentu, seperti webhook GOWA.
- *
- * 🔴 `$phone` adalah PENGIRIM (`chat_id`), `$deviceId` adalah PENERIMA.
- * Parameter dipisah karena keduanya tidak boleh tertukar: polling menyaring
- * `device_id`, dan bug yang diperbaiki pada 1 Okt 2026 justru karena keduanya
- * dicampur.
- */
-function seedIncoming(
-    string $phone,
-    string $body,
-    ?string $messageId = null,
-    ?string $deviceId = null,
-): WaraLog {
-    return WaraLog::query()->create([
-        'direction' => 'in',
-        'event' => 'message',
-        'device_id' => $deviceId ?? otpTestDeviceId(),
-        'chat_id' => $phone.'@s.whatsapp.net',
-        'phone' => $phone,
-        'message_id' => $messageId ?? ('msg-'.uniqid()),
-        'body' => $body,
-        'status' => 'received',
-    ]);
-}
+// `seedIncoming()` pindah ke `helpers.php`. Semula dideklarasikan di file ini
+// saja, padahal itu fungsi global -- file test lain yang membutuhkannya
+// bergantung pada urutan include. `helpers.php` memang tempat fungsi
+// bersama, dan `OtpClientIsolationTest` butuh fungsi yang sama untuk
+// membuktikan jendela client lain benar-benar tidak terlihat.
 
 describe('GET /otp-pending (spec §5.2)', function () {
     it('mengembalikan balasan untuk record pending', function () {
         seedPendingOtp('628123456789', '123456');
         seedIncoming('628999888777', 'kode OTP 123456');
 
-        $this->getJson('/api/v1/srikandi/otp-pending?phone=628123456789', asScraper())
+        $this->getJson('/api/v1/srikandi/otp-pending?sumber=default&phone=628123456789', asScraper())
             ->assertOk()
             ->assertJsonPath('ok', true)
             ->assertJsonPath('replies.0.body', 'kode OTP 123456');
@@ -49,7 +29,7 @@ describe('GET /otp-pending (spec §5.2)', function () {
     it('mengembalikan array kosong bila tidak ada balasan', function () {
         seedPendingOtp('628123456789', '123456');
 
-        $this->getJson('/api/v1/srikandi/otp-pending?phone=628123456789', asScraper())
+        $this->getJson('/api/v1/srikandi/otp-pending?sumber=default&phone=628123456789', asScraper())
             ->assertOk()
             ->assertJsonPath('replies', []);
     });
@@ -81,7 +61,7 @@ describe('GET /otp-pending (spec §5.2)', function () {
             'status' => 'accepted',
         ]);
 
-        $this->getJson('/api/v1/srikandi/otp-pending?phone=628123456789', asScraper())
+        $this->getJson('/api/v1/srikandi/otp-pending?sumber=default&phone=628123456789', asScraper())
             ->assertOk()
             ->assertJsonPath('replies', []);
     });
@@ -92,7 +72,7 @@ describe('GET /otp-pending (spec §5.2)', function () {
         // Bentuk nyata OTP: pengirim = Srikandi, penerima = device kita.
         seedIncoming('628111111111', 'kode OTP 123456');
 
-        $response = $this->getJson('/api/v1/srikandi/otp-pending?phone=628123456789', asScraper());
+        $response = $this->getJson('/api/v1/srikandi/otp-pending?sumber=default&phone=628123456789', asScraper());
 
         expect($response->json('replies'))->toHaveCount(1)
             ->and($response->json('replies.0.body'))->toBe('kode OTP 123456');
@@ -106,7 +86,7 @@ describe('GET /otp-pending (spec §5.2)', function () {
         seedIncoming('628111111111', '999999', null, 'dev-lain');
         seedIncoming('628111111111', '111111', null, otpTestDeviceId());
 
-        $response = $this->getJson('/api/v1/srikandi/otp-pending?phone=628123456789', asScraper());
+        $response = $this->getJson('/api/v1/srikandi/otp-pending?sumber=default&phone=628123456789', asScraper());
 
         expect($response->json('replies'))->toHaveCount(1)
             ->and($response->json('replies.0.body'))->toBe('111111');
@@ -121,7 +101,7 @@ describe('GET /otp-pending (spec §5.2)', function () {
 
         // `where('device_id', null)` akan cocok dengan semua baris yang device-nya
         // tidak diketahui. Itu mengembalikan pesan milik device lain.
-        $this->getJson('/api/v1/srikandi/otp-pending?phone=628123456789', asScraper())
+        $this->getJson('/api/v1/srikandi/otp-pending?sumber=default&phone=628123456789', asScraper())
             ->assertOk()
             ->assertJsonPath('replies', []);
     });
@@ -130,7 +110,7 @@ describe('GET /otp-pending (spec §5.2)', function () {
         $state = seedPendingOtp('628123456789', '123456');
         seedIncoming('628111111111', 'kode OTP 123456');
 
-        $this->getJson('/api/v1/srikandi/otp-pending?request_id='.$state->request_id, asScraper())
+        $this->getJson('/api/v1/srikandi/otp-pending?sumber=default&request_id='.$state->request_id, asScraper())
             ->assertOk()
             ->assertJsonPath('replies.0.body', 'kode OTP 123456');
     });
@@ -152,7 +132,7 @@ describe('GET /otp-pending (spec §5.2)', function () {
 
         seedIncoming('628111111111', 'kode OTP dari JID 123456', null, '628123456789@s.whatsapp.net');
 
-        $this->getJson('/api/v1/srikandi/otp-pending?request_id='.$state->request_id, asScraper())
+        $this->getJson('/api/v1/srikandi/otp-pending?sumber=default&request_id='.$state->request_id, asScraper())
             ->assertOk()
             ->assertJsonPath('replies.0.body', 'kode OTP dari JID 123456');
     });
@@ -162,7 +142,7 @@ describe('GET /otp-pending (spec §5.2)', function () {
 
         seedIncoming('628111111111', 'kode OTP dari NAMA 123456', null, otpTestDeviceId());
 
-        $this->getJson('/api/v1/srikandi/otp-pending?request_id='.$state->request_id, asScraper())
+        $this->getJson('/api/v1/srikandi/otp-pending?sumber=default&request_id='.$state->request_id, asScraper())
             ->assertOk()
             ->assertJsonPath('replies.0.body', 'kode OTP dari NAMA 123456');
     });
@@ -173,7 +153,7 @@ describe('GET /otp-pending (spec §5.2)', function () {
         // Bedanya hanya pada sufiks JID - bentuk yang dipakai gateway.
         seedIncoming('628111111111', '111111', null, '628123456788@s.whatsapp.net');
 
-        $this->getJson('/api/v1/srikandi/otp-pending?phone=628123456789', asScraper())
+        $this->getJson('/api/v1/srikandi/otp-pending?sumber=default&phone=628123456789', asScraper())
             ->assertOk()
             ->assertJsonPath('replies', []);
     });
@@ -188,11 +168,11 @@ describe('GET /otp-pending (spec §5.2)', function () {
         seedIncoming('628123456789', '222222');
 
         // Tanpa `after`: dua balasan.
-        $all = $this->getJson('/api/v1/srikandi/otp-pending?phone=628123456789', asScraper());
+        $all = $this->getJson('/api/v1/srikandi/otp-pending?sumber=default&phone=628123456789', asScraper());
         expect($all->json('replies'))->toHaveCount(2);
 
         // Dengan `after` tepat setelah pesan pertama: hanya yang kedua.
-        $later = $this->getJson('/api/v1/srikandi/otp-pending?phone=628123456789&after='
+        $later = $this->getJson('/api/v1/srikandi/otp-pending?sumber=default&phone=628123456789&after='
             .urlencode($first->created_at->toIso8601String()), asScraper());
 
         expect($later->json('replies'))->toHaveCount(1)
@@ -207,7 +187,7 @@ describe('GET /otp-pending (spec §5.2)', function () {
         seedIncoming('628123456789', '123456');
 
         // Gate state=pending: pesan lama tidak boleh bocor lewat endpoint ini.
-        $this->getJson('/api/v1/srikandi/otp-pending?phone=628123456789', asScraper())
+        $this->getJson('/api/v1/srikandi/otp-pending?sumber=default&phone=628123456789', asScraper())
             ->assertOk()
             ->assertJsonPath('replies', []);
     });
@@ -220,7 +200,7 @@ describe('GET /otp-pending (spec §5.2)', function () {
 
         seedIncoming('628123456789', '123456');
 
-        $this->getJson('/api/v1/srikandi/otp-pending?phone=628123456789', asScraper())
+        $this->getJson('/api/v1/srikandi/otp-pending?sumber=default&phone=628123456789', asScraper())
             ->assertJsonPath('replies', []);
     });
 
@@ -229,7 +209,7 @@ describe('GET /otp-pending (spec §5.2)', function () {
 
         seedIncoming('628123456789', '123456');
 
-        $this->getJson('/api/v1/srikandi/otp-pending?phone=628123456789', asScraper())
+        $this->getJson('/api/v1/srikandi/otp-pending?sumber=default&phone=628123456789', asScraper())
             ->assertJsonPath('replies', []);
     });
 
@@ -240,7 +220,7 @@ describe('GET /otp-pending (spec §5.2)', function () {
         seedIncoming('628222222222', '888888', null, 'dev-lain');
         seedIncoming('628111111111', '123456', null, otpTestDeviceId());
 
-        $response = $this->getJson('/api/v1/srikandi/otp-pending?phone=628123456789', asScraper());
+        $response = $this->getJson('/api/v1/srikandi/otp-pending?sumber=default&phone=628123456789', asScraper());
 
         expect($response->json('replies'))->toHaveCount(1)
             ->and($response->json('replies.0.body'))->toBe('123456');
@@ -258,7 +238,7 @@ describe('GET /otp-pending (spec §5.2)', function () {
             'status' => 'accepted',
         ]);
 
-        $this->getJson('/api/v1/srikandi/otp-pending?phone=628123456789', asScraper())
+        $this->getJson('/api/v1/srikandi/otp-pending?sumber=default&phone=628123456789', asScraper())
             ->assertJsonPath('replies', []);
     });
 
@@ -269,13 +249,13 @@ describe('GET /otp-pending (spec §5.2)', function () {
         seedPendingOtp('628123456789', '123456');
         seedIncoming('628111111111', '123456');
 
-        $this->getJson('/api/v1/srikandi/otp-pending?phone=08123456789', asScraper())
+        $this->getJson('/api/v1/srikandi/otp-pending?sumber=default&phone=08123456789', asScraper())
             ->assertOk()
             ->assertJsonPath('replies.0.body', '123456');
     });
 
     it('menolak tanpa identitas', function () {
-        $this->getJson('/api/v1/srikandi/otp-pending', asScraper())->assertStatus(422);
+        $this->getJson('/api/v1/srikandi/otp-pending?sumber=default', asScraper())->assertStatus(422);
     });
 
     it('membatasi jumlah balasan per pembacaan', function () {
@@ -285,7 +265,7 @@ describe('GET /otp-pending (spec §5.2)', function () {
             seedIncoming('628111111111', '1'.$i.'23456');
         }
 
-        $response = $this->getJson('/api/v1/srikandi/otp-pending?phone=628123456789', asScraper());
+        $response = $this->getJson('/api/v1/srikandi/otp-pending?sumber=default&phone=628123456789', asScraper());
 
         expect($response->json('replies'))->toHaveCount(20);
     });
@@ -294,7 +274,7 @@ describe('GET /otp-pending (spec §5.2)', function () {
         seedPendingOtp('628123456789', '123456');
         seedIncoming('628111111111', 'kode 123456', 'msg-abc');
 
-        $this->getJson('/api/v1/srikandi/otp-pending?phone=628123456789', asScraper())
+        $this->getJson('/api/v1/srikandi/otp-pending?sumber=default&phone=628123456789', asScraper())
             ->assertJsonPath('replies.0.message_id', 'msg-abc');
     });
 });

@@ -29,6 +29,7 @@ function otpState(array $overrides = []): SrikandiOtpState
 {
     return SrikandiOtpState::query()->create(array_merge([
         'phone' => '628123456789',
+        'sumber' => 'default',
         'state' => SrikandiOtpState::STATE_PENDING,
         'expires_at' => now()->addMinutes(5),
         'opened_at' => now(),
@@ -123,28 +124,24 @@ describe('phone terenkripsi di srikandi_otp_states', function () {
 });
 
 describe('sumber pada srikandi_otp_states', function () {
-    it('`sumber` kosong berarti database mengisi default `default`', function () {
-        // 🔴 Default ini BEDA dari `srikandi_naskah.sumber` yang tidak punya
-        // default, dan itu disengaja: naskah yatim = dokumen tersimpan di bawah
-        // client kelihatan valid, sedangkan state OTP yatim = jendela pending
-        // yang kedaluwarsa dalam hitungan menit.
+    it('`sumber` wajib diisi eksplisit -- tidak ada lagi default', function () {
+        // 🔴 Kolom `sumber` di `srikandi_otp_states` sekarang NOT NULL tanpa
+        // default, sama seperti `srikandi_naskah.sumber`.
         //
-        // Setelah S3 mengikat token ke client, default ini harus dihapus --
-        // sama seperti di `srikandi_naskah`. Test ini mengunci perilaku SEKARANG
-        // supaya penghapusan default nanti kelihatan.
+        // Default lama (`'default'`) dipakai supaya state OTP yatim tetap bisa
+        // dibuat sebelum token terikat ke client. Setelah S3 mewajibkan
+        // `sumber` di endpoint, tidak ada caller produksi lagi yang boleh
+        // bergantung pada default itu: dari mana pun state dibuat, sumbernya
+        // harus diketahui.
         //
-        // 🔴 Default kolom berlaku di DATABASE, bukan di objek PHP.
-        // `getAttributesForInsert()` hanya mengirim atribut yang ada di objek,
-        // jadi `$state->sumber` tetap `null` sampai di-refresh dari database.
-        // Test yang memeriksa `$state->sumber` tanpa refresh akan menyimpulkan
-        // default-nya tidak bekerja -- padahal justru sebaliknya.
-        $state = otpState();
-
-        expect($state->getAttributes())->not->toHaveKey('sumber');
-
-        $fresh = SrikandiOtpState::query()->findOrFail($state->id);
-
-        expect($fresh->sumber)->toBe('default');
+        // Kalau test ini dibalik menjadi "boleh kosong", itu berartisomeone
+        // mengembalikan default dan membuka kembali jendela OTP tanpa client.
+        expect(fn () => SrikandiOtpState::query()->create([
+            'phone' => '628123456789',
+            'state' => SrikandiOtpState::STATE_PENDING,
+            'expires_at' => now()->addMinutes(5),
+            'opened_at' => now(),
+        ]))->toThrow(QueryException::class);
     });
 
     it('sumber bisa diisi eksplisit untuk client tertentu', function () {

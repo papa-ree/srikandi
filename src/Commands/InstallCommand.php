@@ -199,7 +199,15 @@ class InstallCommand extends Command
     protected function seedPermissions(): void
     {
         $permissions = [
-            'srikandi.status.read' => 'Membaca halaman status bale/srikandi. Halaman ini read-only.',
+            // 🔴 Naskah BUKAN bagian dari scope API scraper.
+            //
+            // `srikandi.naskah.write` di atas adalah scope untuk MENGIRIM naskah
+            // masuk, dan sengaja tidak ada pasangannya yang bisa membaca.
+            // Permission web ini hanya untuk manusia yang membuka
+            // `/srikandi/naskah`, dan hanya read: halaman itu tidak punya
+            // `Form.php`, tidak punya `item-actions`, dan tidak punya
+            // `deleteEvent` (PRD §6.1).
+            'srikandi.naskah.read' => 'Melihat daftar dan detail naskah dinas yang ter-cache. Read-only.',
             'srikandi.client.read' => 'Melihat daftar client Srikandi dan statusnya.',
             'srikandi.client.create' => 'Menambah client Srikandi baru.',
             'srikandi.client.update' => 'Mengubah kredensial dan konfigurasi client Srikandi.',

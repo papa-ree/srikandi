@@ -58,6 +58,7 @@ describe('kontrak v2: jendela listening (spec §5.0b)', function () {
         seedSendableDevice('dev-otp', 'otp');
 
         $response = $this->postJson('/api/v1/srikandi/otp-request', [
+            'sumber' => 'default',
             'purpose' => 'otp',
         ], asScraper());
 
@@ -78,6 +79,7 @@ describe('kontrak v2: jendela listening (spec §5.0b)', function () {
     it('2. tanpa phone dan tanpa device purpose=otp -> error yang menyebut device', function () {
         // Tidak ada device sama sekali.
         $response = $this->postJson('/api/v1/srikandi/otp-request', [
+            'sumber' => 'default',
             'purpose' => 'otp',
         ], asScraper());
 
@@ -130,6 +132,7 @@ describe('kontrak v2: jendela listening (spec §5.0b)', function () {
         ])->save();
 
         $response = $this->postJson('/api/v1/srikandi/otp-request', [
+            'sumber' => 'default',
             'purpose' => 'otp',
         ], asScraper());
 
@@ -142,10 +145,10 @@ describe('kontrak v2: jendela listening (spec §5.0b)', function () {
     it('3. dua kali -> jendela sama, 200 + reused:true', function () {
         seedSendableDevice('dev-otp', 'otp');
 
-        $first = $this->postJson('/api/v1/srikandi/otp-request', ['purpose' => 'otp'], asScraper());
+        $first = $this->postJson('/api/v1/srikandi/otp-request', ['sumber' => 'default', 'purpose' => 'otp'], asScraper());
         $first->assertCreated();
 
-        $second = $this->postJson('/api/v1/srikandi/otp-request', ['purpose' => 'otp'], asScraper());
+        $second = $this->postJson('/api/v1/srikandi/otp-request', ['sumber' => 'default', 'purpose' => 'otp'], asScraper());
 
         $second->assertOk()
             ->assertJsonPath('reused', true)
@@ -158,7 +161,7 @@ describe('kontrak v2: jendela listening (spec §5.0b)', function () {
     it('4. TIDAK ada pesan WhatsApp yang dikirim saat membuka jendela', function () {
         seedSendableDevice('dev-otp', 'otp');
 
-        $this->postJson('/api/v1/srikandi/otp-request', ['purpose' => 'otp'], asScraper())
+        $this->postJson('/api/v1/srikandi/otp-request', ['sumber' => 'default', 'purpose' => 'otp'], asScraper())
             ->assertCreated();
 
         // 🔴 Ini assertion terpenting dari seluruh kontrak v2. Kalau Bale
@@ -170,7 +173,7 @@ describe('kontrak v2: jendela listening (spec §5.0b)', function () {
     it('4b. jendela tidak pernah mengarang kode OTP', function () {
         seedSendableDevice('dev-otp', 'otp');
 
-        $this->postJson('/api/v1/srikandi/otp-request', ['purpose' => 'otp'], asScraper())
+        $this->postJson('/api/v1/srikandi/otp-request', ['sumber' => 'default', 'purpose' => 'otp'], asScraper())
             ->assertCreated();
 
         $state = SrikandiOtpState::query()->firstOrFail();
@@ -189,7 +192,7 @@ describe('kontrak v2: otp-pending dibatasi opened_at (spec §5.0b)', function ()
 
         $this->travel(2)->minutes();
 
-        $window = $this->postJson('/api/v1/srikandi/otp-request', ['purpose' => 'otp'], asScraper())
+        $window = $this->postJson('/api/v1/srikandi/otp-request', ['sumber' => 'default', 'purpose' => 'otp'], asScraper())
             ->assertCreated()
             ->json('request_id');
 
@@ -197,7 +200,7 @@ describe('kontrak v2: otp-pending dibatasi opened_at (spec §5.0b)', function ()
         incomingBefore('628000000001', '123456');
 
         $response = $this->getJson(
-            '/api/v1/srikandi/otp-pending?request_id='.$window,
+            '/api/v1/srikandi/otp-pending?sumber=default&request_id='.$window,
             asScraper()
         );
 
@@ -213,6 +216,7 @@ describe('kontrak v2: otp-pending dibatasi opened_at (spec §5.0b)', function ()
         seedSendableDevice('dev-otp', 'otp');
 
         $windowA = $this->postJson('/api/v1/srikandi/otp-request', [
+            'sumber' => 'default',
             'purpose' => 'otp', 'session_key' => 'a',
         ], asScraper())->json('request_id');
 
@@ -228,7 +232,7 @@ describe('kontrak v2: otp-pending dibatasi opened_at (spec §5.0b)', function ()
         incomingBefore('628000000001', '111111', null, 'dev-otp-2');
 
         $response = $this->getJson(
-            '/api/v1/srikandi/otp-pending?request_id='.$windowA,
+            '/api/v1/srikandi/otp-pending?sumber=default&request_id='.$windowA,
             asScraper()
         );
 
@@ -240,13 +244,13 @@ describe('kontrak v2: otp-pending dibatasi opened_at (spec §5.0b)', function ()
     it('7. request_id tak dikenal -> [] , bukan 500, bukan bocor', function () {
         seedSendableDevice('dev-otp', 'otp');
 
-        $this->postJson('/api/v1/srikandi/otp-request', ['purpose' => 'otp'], asScraper())
+        $this->postJson('/api/v1/srikandi/otp-request', ['sumber' => 'default', 'purpose' => 'otp'], asScraper())
             ->assertCreated();
 
         incomingBefore('628000000001', '123456');
 
         $this->getJson(
-            '/api/v1/srikandi/otp-pending?request_id='.Str::uuid(),
+            '/api/v1/srikandi/otp-pending?sumber=default&request_id='.Str::uuid(),
             asScraper()
         )
             ->assertOk()
@@ -256,14 +260,14 @@ describe('kontrak v2: otp-pending dibatasi opened_at (spec §5.0b)', function ()
     it('7b. request_id milik jendela yang sudah kedaluwarsa -> []', function () {
         seedSendableDevice('dev-otp', 'otp');
 
-        $window = $this->postJson('/api/v1/srikandi/otp-request', ['purpose' => 'otp'], asScraper())
+        $window = $this->postJson('/api/v1/srikandi/otp-request', ['sumber' => 'default', 'purpose' => 'otp'], asScraper())
             ->json('request_id');
 
         incomingBefore('628000000001', '123456');
 
         $this->travel(10)->minutes();
 
-        $this->getJson('/api/v1/srikandi/otp-pending?request_id='.$window, asScraper())
+        $this->getJson('/api/v1/srikandi/otp-pending?sumber=default&request_id='.$window, asScraper())
             ->assertOk()
             ->assertJsonPath('replies', []);
     });
@@ -274,6 +278,7 @@ describe('kontrak v2: backward compatibility', function () {
         seedSendableDevice();
 
         $this->postJson('/api/v1/srikandi/otp-request', [
+            'sumber' => 'default',
             'phone' => '628123456789',
         ], asScraper())->assertCreated();
 
@@ -287,9 +292,9 @@ describe('kontrak v2: backward compatibility', function () {
     it('8b. phone eksplisit kedua kali -> 200, tidak kirim ulang', function () {
         seedSendableDevice();
 
-        $this->postJson('/api/v1/srikandi/otp-request', ['phone' => '628123456789'], asScraper())
+        $this->postJson('/api/v1/srikandi/otp-request', ['sumber' => 'default', 'phone' => '628123456789'], asScraper())
             ->assertCreated();
-        $this->postJson('/api/v1/srikandi/otp-request', ['phone' => '628123456789'], asScraper())
+        $this->postJson('/api/v1/srikandi/otp-request', ['sumber' => 'default', 'phone' => '628123456789'], asScraper())
             ->assertOk();
 
         Http::assertSentCount(1);
@@ -299,6 +304,7 @@ describe('kontrak v2: backward compatibility', function () {
         seedPendingOtp('628123456789', '123456');
 
         $this->postJson('/api/v1/srikandi/otp-verify', [
+            'sumber' => 'default',
             'phone' => '628123456789',
             'code' => '123456',
         ], asScraper())
@@ -310,6 +316,7 @@ describe('kontrak v2: backward compatibility', function () {
         $state = seedPendingOtp('628123456789', '123456');
 
         $this->postJson('/api/v1/srikandi/otp-verify', [
+            'sumber' => 'default',
             'request_id' => $state->request_id,
             'code' => '123456',
         ], asScraper())
@@ -318,7 +325,7 @@ describe('kontrak v2: backward compatibility', function () {
     });
 
     it('9c. otp-verify tanpa identitas ditolak', function () {
-        $this->postJson('/api/v1/srikandi/otp-verify', ['code' => '123456'], asScraper())
+        $this->postJson('/api/v1/srikandi/otp-verify', ['sumber' => 'default', 'code' => '123456'], asScraper())
             ->assertStatus(422);
     });
 });
@@ -327,12 +334,13 @@ describe('kontrak v2: verifikasi jendela ditolak dengan jelas', function () {
     it('10. jendela tanpa kode_hash ditolak jelas, tidak crash, tidak naikkan attempts', function () {
         seedSendableDevice('dev-otp', 'otp');
 
-        $window = $this->postJson('/api/v1/srikandi/otp-request', ['purpose' => 'otp'], asScraper())
+        $window = $this->postJson('/api/v1/srikandi/otp-request', ['sumber' => 'default', 'purpose' => 'otp'], asScraper())
             ->json('request_id');
 
         $state = SrikandiOtpState::query()->where('request_id', $window)->firstOrFail();
 
         $response = $this->postJson('/api/v1/srikandi/otp-verify', [
+            'sumber' => 'default',
             'request_id' => $window,
             'code' => '123456',
         ], asScraper());
@@ -348,7 +356,7 @@ describe('kontrak v2: verifikasi jendela ditolak dengan jelas', function () {
     it('10b. pesan dengan code_hash null tidak merusak listener', function () {
         seedSendableDevice('dev-otp', 'otp');
 
-        $this->postJson('/api/v1/srikandi/otp-request', ['purpose' => 'otp'], asScraper())
+        $this->postJson('/api/v1/srikandi/otp-request', ['sumber' => 'default', 'purpose' => 'otp'], asScraper())
             ->assertCreated();
 
         $state = SrikandiOtpState::query()->firstOrFail();
@@ -373,7 +381,7 @@ describe('kontrak v2: request_id tidak membocorkan apa pun', function () {
     it('11. request_id adalah UUID acak, tidak berisi digit nomor', function () {
         seedSendableDevice('dev-otp', 'otp');
 
-        $first = $this->postJson('/api/v1/srikandi/otp-request', ['purpose' => 'otp'], asScraper())
+        $first = $this->postJson('/api/v1/srikandi/otp-request', ['sumber' => 'default', 'purpose' => 'otp'], asScraper())
             ->json('request_id');
 
         $state = SrikandiOtpState::query()->firstOrFail();
@@ -391,13 +399,13 @@ describe('kontrak v2: request_id tidak membocorkan apa pun', function () {
     it('11b. dua jendela untuk nomor sama punya request_id berbeda', function () {
         seedSendableDevice('dev-otp', 'otp');
 
-        $a = $this->postJson('/api/v1/srikandi/otp-request', ['purpose' => 'otp'], asScraper())
+        $a = $this->postJson('/api/v1/srikandi/otp-request', ['sumber' => 'default', 'purpose' => 'otp'], asScraper())
             ->json('request_id');
 
         // Paksa jendela pertama tutup supaya yang kedua benar-benar baru.
         SrikandiOtpState::query()->update(['state' => 'expired']);
 
-        $b = $this->postJson('/api/v1/srikandi/otp-request', ['purpose' => 'otp'], asScraper())
+        $b = $this->postJson('/api/v1/srikandi/otp-request', ['sumber' => 'default', 'purpose' => 'otp'], asScraper())
             ->json('request_id');
 
         expect($a)->not->toBe($b);
@@ -406,7 +414,7 @@ describe('kontrak v2: request_id tidak membocorkan apa pun', function () {
     it('12. phone_masked tidak pernah memuat nomor penuh', function () {
         seedSendableDevice('dev-otp', 'otp');
 
-        $masked = $this->postJson('/api/v1/srikandi/otp-request', ['purpose' => 'otp'], asScraper())
+        $masked = $this->postJson('/api/v1/srikandi/otp-request', ['sumber' => 'default', 'purpose' => 'otp'], asScraper())
             ->json('phone_masked');
 
         expect($masked)->not->toBeNull()
@@ -417,7 +425,7 @@ describe('kontrak v2: request_id tidak membocorkan apa pun', function () {
     it('12b. nomor penuh tidak pernah ada di respons mana pun', function () {
         seedSendableDevice('dev-otp', 'otp');
 
-        $response = $this->postJson('/api/v1/srikandi/otp-request', ['purpose' => 'otp'], asScraper());
+        $response = $this->postJson('/api/v1/srikandi/otp-request', ['sumber' => 'default', 'purpose' => 'otp'], asScraper());
 
         // `628111` muncul di phone_masked sebagai 4 digit depan — itu memang
         // disengaja. Yang dilarang adalah nomor penuh sebagai nilai tersendiri.

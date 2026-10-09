@@ -33,7 +33,7 @@ require_once __DIR__.'/../helpers.php';
 uses(RefreshDatabase::class)
     ->beforeEach(srikandiSetup());
 
-function clientRow(string $slug = 'default', array $credentials = [], array $extra = []): SrikandiClient
+function clientRow(string $slug = 'uji-client', array $credentials = [], array $extra = []): SrikandiClient
 {
     $client = SrikandiClient::query()->create(array_merge([
         'slug' => $slug,
@@ -58,8 +58,12 @@ describe('GET /clients', function () {
 
         $body = $response->json();
 
-        expect($body['clients'])->toHaveCount(2)
-            ->and(array_column($body['clients'], 'slug'))->toBe(['satker-a', 'satker-b']);
+        // `srikandiSetup()` sudah membuat client `default` supaya `sumber`
+        // pada endpoint OTP lolos `Rule::exists`. Client itu juga nyata di
+        // database, jadi dia juga HARUS muncul di daftar -- disappear di sini
+        // berarti endpoint menyembunyikan client yang aktif.
+        expect($body['clients'])->toHaveCount(3)
+            ->and(array_column($body['clients'], 'slug'))->toBe(['default', 'satker-a', 'satker-b']);
 
         // 🔴 Ini assertion yang paling penting di endpoint ini: nomor tujuan dan
         // kredensial TIDAK BOLEH ikut. Scraper tidak perlu tahu ke mana OTP

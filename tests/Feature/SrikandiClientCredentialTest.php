@@ -128,7 +128,7 @@ function runClientsMigration(): void
 describe('enkripsi kolom kredensial', function () {
     it('menyimpan kredensial sebagai ciphertext, bukan teks polos', function () {
         $client = SrikandiClient::query()->create([
-            'slug' => 'default',
+            'slug' => 'uji-kredensial',
             'nama' => 'Client Uji',
         ]);
 
@@ -159,7 +159,7 @@ describe('enkripsi kolom kredensial', function () {
     });
 
     it('TIDAK menyertakan kredensial di toArray()', function () {
-        $client = SrikandiClient::query()->create(['slug' => 'default', 'nama' => 'Uji']);
+        $client = SrikandiClient::query()->create(['slug' => 'uji-kredensial', 'nama' => 'Uji']);
         $client->setCredentials([
             'username' => 'user-srikandi',
             'password' => 'PasswordRahasia123',
@@ -180,7 +180,7 @@ describe('enkripsi kolom kredensial', function () {
 describe('proteksi activity log', function () {
     it('TIDAK menulis kredensial ke activity_log saat client disimpan', function () {
         $client = SrikandiClient::query()->create([
-            'slug' => 'default',
+            'slug' => 'uji-kredensial',
             'nama' => 'Client Uji',
         ]);
 
@@ -210,7 +210,7 @@ describe('proteksi activity log', function () {
     });
 
     it('TIDAK menulis kredensial meski nilainya SAMA dengan nilai sebelumnya', function () {
-        $client = SrikandiClient::query()->create(['slug' => 'default', 'nama' => 'Uji']);
+        $client = SrikandiClient::query()->create(['slug' => 'uji-kredensial', 'nama' => 'Uji']);
         $client->setCredentials(['password' => 'PasswordRahasia123'])->save();
 
         $client->setCredentials(['password' => 'PasswordRahasia123'])->save();
@@ -221,7 +221,7 @@ describe('proteksi activity log', function () {
     });
 
     it('MENCATAT rotasi kredensial sebagai timestamp, tanpa nilai kredensialnya', function () {
-        $client = SrikandiClient::query()->create(['slug' => 'default', 'nama' => 'Uji']);
+        $client = SrikandiClient::query()->create(['slug' => 'uji-kredensial', 'nama' => 'Uji']);
         $client->setCredentials(['password' => 'PasswordLama'])->save();
 
         $client->setCredentials(['password' => 'PasswordBaru'])->save();
@@ -247,7 +247,7 @@ describe('proteksi activity log', function () {
     });
 
     it('TETAP mencatat perubahan yang memang berguna', function () {
-        $client = SrikandiClient::query()->create(['slug' => 'default', 'nama' => 'Uji']);
+        $client = SrikandiClient::query()->create(['slug' => 'uji-kredensial', 'nama' => 'Uji']);
 
         $client->update(['nama' => 'Nama Baru']);
 
@@ -263,7 +263,7 @@ describe('proteksi activity log', function () {
 
 describe('blind index untuk pencarian nomor', function () {
     it('wherePhone() menemukan client berdasarkan nomor ternormalisasi', function () {
-        $client = SrikandiClient::query()->create(['slug' => 'default', 'nama' => 'Uji']);
+        $client = SrikandiClient::query()->create(['slug' => 'uji-kredensial', 'nama' => 'Uji']);
         $client->setCredentials(['phone' => '628123456789'])->save();
 
         // Ketiga bentuk ini harus menemukan client yang sama.
@@ -274,7 +274,7 @@ describe('blind index untuk pencarian nomor', function () {
     });
 
     it("where('phone', ...) biasa selalu kosong -- dan itu bukan bug", function () {
-        $client = SrikandiClient::query()->create(['slug' => 'default', 'nama' => 'Uji']);
+        $client = SrikandiClient::query()->create(['slug' => 'uji-kredensial', 'nama' => 'Uji']);
         $client->setCredentials(['phone' => '628123456789'])->save();
 
         // 🔴 Test ini mengunci KEBALIKAN dari asumsi yang salah.
@@ -297,7 +297,7 @@ describe('blind index untuk pencarian nomor', function () {
     });
 
     it('phone_index ikut diperbarui setiap kali nomor diganti', function () {
-        $client = SrikandiClient::query()->create(['slug' => 'default', 'nama' => 'Uji']);
+        $client = SrikandiClient::query()->create(['slug' => 'uji-kredensial', 'nama' => 'Uji']);
         $client->setCredentials(['phone' => '628123456789'])->save();
 
         $indexAwal = SrikandiClient::query()->findOrFail($client->id)->phone_index;
@@ -317,7 +317,7 @@ describe('blind index untuk pencarian nomor', function () {
     });
 
     it('TIDAK memberi index untuk kolom kosong', function () {
-        $client = SrikandiClient::query()->create(['slug' => 'default', 'nama' => 'Uji']);
+        $client = SrikandiClient::query()->create(['slug' => 'uji-kredensial', 'nama' => 'Uji']);
 
         // Phone kosong harusnya tidak punya index. Kalau index-nya dihitung
         // untuk string kosong, semua client tanpa nomor akan saling dianggap
@@ -333,7 +333,7 @@ describe('blind index untuk pencarian nomor', function () {
 
 describe('rotasi kredensial', function () {
     it('menandai credentials_rotated_at saat kredensial benar-benar berubah', function () {
-        $client = SrikandiClient::query()->create(['slug' => 'default', 'nama' => 'Uji']);
+        $client = SrikandiClient::query()->create(['slug' => 'uji-kredensial', 'nama' => 'Uji']);
 
         expect($client->credentials_rotated_at)->toBeNull();
 
@@ -344,7 +344,7 @@ describe('rotasi kredensial', function () {
     });
 
     it('TIDAK menandai rotasi saat form edit mengirim password kosong', function () {
-        $client = SrikandiClient::query()->create(['slug' => 'default', 'nama' => 'Uji']);
+        $client = SrikandiClient::query()->create(['slug' => 'uji-kredensial', 'nama' => 'Uji']);
         $client->setCredentials(['password' => 'PasswordAsli'])->save();
 
         $rotasiAwal = SrikandiClient::query()->findOrFail($client->id)->credentials_rotated_at;
@@ -369,7 +369,7 @@ describe('rotasi kredensial', function () {
 
     it('TIDAK bisa diisi lewat mass-assignment', function () {
         $client = SrikandiClient::query()->create([
-            'slug' => 'default',
+            'slug' => 'uji-kredensial',
             'nama' => 'Uji',
             // Kolom kredensial sengaja tidak ada di $fillable, jadi ketiganya di sini
             // harus diabaikan diam-diam.
@@ -384,7 +384,7 @@ describe('rotasi kredensial', function () {
 
 describe('kesiapan client untuk scraper', function () {
     it('butuh username, password, DAN nomor tujuan', function () {
-        $client = SrikandiClient::query()->create(['slug' => 'default', 'nama' => 'Uji']);
+        $client = SrikandiClient::query()->create(['slug' => 'uji-kredensial', 'nama' => 'Uji']);
 
         // Belum ada apa-apa.
         expect($client->isReadyForScraper())->toBeFalse();
@@ -400,7 +400,7 @@ describe('kesiapan client untuk scraper', function () {
     });
 
     it('client nonaktif tidak pernah siap walau kredensialnya lengkap', function () {
-        $client = SrikandiClient::query()->create(['slug' => 'default', 'nama' => 'Uji']);
+        $client = SrikandiClient::query()->create(['slug' => 'uji-kredensial', 'nama' => 'Uji']);
         $client->setCredentials([
             'username' => 'user',
             'password' => 'pass',
