@@ -39,7 +39,13 @@ beforeEach(function () {
 });
 
 /**
- * Migration `move_otp_route_to_srikandi_client` yang sudah dipublish.
+ * Migration `create_srikandi_clients_table` yang sudah dipublish.
+ *
+ * 🔴 Logika normalisasi client Wara dulu hidup di migrasi terpisah
+ * (`move_otp_route_to_srikandi_client`). Sekarang menyatu di migrasi tabel
+ * tujuannya, jadi helper ini memuat file itu dan test memanggil
+ * `normalizeWaraClient()` langsung - bukan `up()`, karena tabel sudah dibuat
+ * `RefreshDatabase`.
  *
  * 🔴 Path-nya dihitung dari `database/migrations`, bukan dari folder stub
  * package - dan itu disengaja. Yang diuji adalah file yang BENAR-BENAR dijalankan
@@ -48,7 +54,7 @@ beforeEach(function () {
  * Kalau stub yang diuji, test bisa hijau sementara file yang jalan di
  * produksi berbeda - persis kelas kegagalan yang tidak terlihat.
  */
-function otpRouteMigration(): object
+function srikandiClientsMigration(): object
 {
     // 🔴 Cari file di DISK, bukan lewat tabel `migrations`.
     //
@@ -61,11 +67,11 @@ function otpRouteMigration(): object
     // ditemukan" untuk file yang benar-benar ada di disk. Nama file di sini
     // sudah LENGKAP dengan ekstensi - nilai di `migrations` adalah nama tanpa
     // ekstensi.
-    $matches = glob(database_path('migrations/*_move_otp_route_to_srikandi_client.php'));
+    $matches = glob(database_path('migrations/*_create_srikandi_clients_table.php'));
 
     if ($matches === []) {
         throw new RuntimeException(
-            'Migrasi move_otp_route_to_srikandi_client belum dipublish. '
+            'Migrasi create_srikandi_clients_table belum dipublish. '
             .'Jalankan: php artisan srikandi:publish-migration'
         );
     }
@@ -230,7 +236,7 @@ describe('client Wara milik srikandi', function () {
             'device_id' => 'dev-legacy',
         ])->save();
 
-        otpRouteMigration()->up();
+        srikandiClientsMigration()->normalizeWaraClient();
 
         expect(WaraClient::query()->where('name', 'Wara (bawaan)')->exists())->toBeFalse();
 
@@ -256,7 +262,7 @@ describe('client Wara milik srikandi', function () {
             'device_id' => 'wago prod',
         ])->save();
 
-        otpRouteMigration()->up();
+        srikandiClientsMigration()->normalizeWaraClient();
 
         // Device-nya TIDAK ikut terhapus - itu milik GOWA.
         expect(WaraRoute::query()->where('purpose', 'notifikasi')->exists())->toBeFalse()
@@ -279,7 +285,7 @@ describe('client Wara milik srikandi', function () {
             'device_id' => 'dev-misterius',
         ])->save();
 
-        expect(fn () => otpRouteMigration()->up())
+        expect(fn () => srikandiClientsMigration()->normalizeWaraClient())
             ->toThrow(RuntimeException::class, 'mystery-purpose');
 
         // Client bawaan harus masih ada - migrasi berhenti, bukan menghapus

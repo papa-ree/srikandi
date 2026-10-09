@@ -163,8 +163,18 @@ describe('pemisahan scope (spec §7)', function () {
             ->pluck('name')
             ->all();
 
+        // 🔴 Dua permission di bawah adalah KONTROL POSITIF, bukan hiasan.
+        //
+        // Tanpa mereka, semua `not->toContain` di bawah bisa lolos hanya karena
+        // daftarnya kosong -- mis. `seedPermissions()` gagal jalan. Keduanya
+        // permission baca NYATA yang disemai `InstallCommand`, jadi
+        // kehadirannya membuktikan daftar ini memang berisi permission web.
+        //
+        // 🔴 Tidak ada `srikandi.status.read`. Permission itu tidak pernah
+        // disemai (package ini tidak punya halaman maupun menu Status), jadi
+        // jangan dipasang kembali sebagai kontrol sampai halamannya ada.
         expect($webPermissions)
-            ->toContain('srikandi.status.read')
+            ->toContain('srikandi.naskah.read')
             ->toContain('srikandi.client.read')
             ->not->toContain('srikandi.client.credentials')
             // Scope API tidak boleh bocor jadi permission, dan sebaliknya.

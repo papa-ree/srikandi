@@ -32,9 +32,9 @@ class InstallCommand extends Command
      * Client Wara yang dipegang `bale/srikandi`.
      *
      * 🔴 Satu konstanta ini dipakai oleh `InstallCommand` dan migration
-     * `move_otp_route_to_srikandi_client`. Kalau keduanya punya string sendiri
-     * dan salah ketik, migrasi akan membuat client kedua yang namanya
-     * berbeda - dan `OtpService` akan mencari yang kosong.
+     * `create_srikandi_clients_table` (bagian `normalizeWaraClient`). Kalau
+     * keduanya punya string sendiri dan salah ketik, migrasi akan membuat client
+     * kedua yang namanya berbeda - dan `OtpService` akan mencari yang kosong.
      */
     public const WARA_CLIENT_NAME = 'Srikandi (Package)';
 

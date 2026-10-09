@@ -1,0 +1,421 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
+
+/**
+ * Client Srikandi = satu akun login Srikandi + satu device Wara.
+ *
+ * 🔴 KENAPA ADA TABEL INI (dan kenapa kredensialnya bergeser ke Bale)
+ *
+ *Kesalahan sebelumnya adalah menyimpan kredensial Srikandi di `config/srikandi.php`
+ * sebagai satu blok. Itu berarti satu akun per instalasi, dan menambah akun
+ * kedua berarti menambah file konfigurasi yang berisi password -- di repo,
+ * di image container, dan di setiap backup.
+ *
+ * Yang dilakukan di sini: tiap client berdiri sendiri, dan kolom kredensialnya
+ * terenkripsi di level database dengan kunci dari `APP_KEY`.
+ *
+ * 🔴 SATU CLIENT = SATU WARA CLIENT (bukan satu device yang dipakai bersama)
+ *
+ * `wara_client_id` sengaja 1:1, bukan banyak-ke-satu. Alasannya ada di
+ * `OtpPendingController`: polling difilter per (device, session_key). Kalau dua
+ * akun Srikandi berbagi device, balasan OTP akun A bisa terbaca akun B --
+ * keduanya terfilter device yang sama, dan tidak ada yang bisa membuktikan
+ * balasan itu milik siapa.
+ *
+ * "Satu device bisa melayani beberapa akun" yang pernah muncul di FAQ adalah
+ * jawaban untuk kondisi sebelum tabel ini ada. Sekarang jawabannya berubah:
+ * satu akun = satu device. Device yang sama bisa dipasang sebagai WARA client
+ * terpisah untuk tiap akun, tapi di tabel Wara itu tetap dua baris berbeda --
+ * dan hanya itu yang membuat filter OTP tidak saling menimpa.
+ *
+ * 🔴 ENKRIPSI: password, totp_secret, gemini_api_key, phone, notify_phone
+ *
+ * Kolom-kolom ini pakai cast `encrypted` Laravel, yang memakai AES-256-CBC
+ * dengan kunci turunan APP_KEY. Konsekuensinya:
+ *
+ * - TIDAK bisa dipakai di `WHERE` langsung. `where('phone', '628...')` tidak
+ *   akan pernah cocok, karena yang tersimpan bukan `628...`.
+ * - Untuk pencarian ada kolom `*_index`: HMAC-SHA256 dari nilai ternormalisasi,
+ *   hex, 64 char. HMAC (bukan hash biasa) supaya penyerang yang punya dump
+ *   tabel tidak bisa menebak nomor dengan mencoba semua kombinasi.
+ * - Kunci HMAC harus DIBEDAKAN dari kunci enkripsi. Kalau sama, penyerang yang
+ *   bisa menghitung HMAC juga bisa mencoba mendekripsi. Dipisahkan lewat
+ *   `SRIKANDI_INDEX_KEY`.
+ *
+ * 🔴 NORMALISASI CLIENT WARA (digabung dari `move_otp_route_to_srikandi_client`)
+ *
+ * Logika itu dulu punya file migrasi sendiri. Sekarang menyatu di sini karena
+ * tabel tujuannya satu: ia memastikan client Wara `Srikandi (Package)` ada,
+ * memindahkan route `otp` dari client bawaan, lalu membongkar client
+ * `Wara (bawaan)`. Dijalankan SETELAH tabel dibuat dan aman dipanggil ulang.
+ */
+return new class extends Migration
+{
+    /** Client milik `bale/srikandi`. */
+    private const SRIKANDI_CLIENT = 'Srikandi (Package)';
+
+    /** Client generik yang dibongkar. */
+    private const LEGACY_CLIENT = 'Wara (bawaan)';
+
+    /** Purpose yang pindah ke client Srikandi. ONLY this. */
+    private const MIGRATED_PURPOSE = 'otp';
+
+    /**
+     * Purpose yang route-nya DIHAPUS, bukan dipindah.
+     *
+     * Milik package `Nawasara\Wago` yang sudah di-uninstall. Dipisah dari
+     * `MIGRATED_PURPOSE` supaya kode jelas: satu dipindah, satu dihapus, dan
+     * keduanya disengaja.
+     */
+    private const ORPHANED_PURPOSE = 'notifikasi';
+
+    public function up(): void
+    {
+        Schema::create('srikandi_clients', function (Blueprint $table) {
+            $table->uuid('id')->primary();
+
+            /**
+             * 🔴 PENENTU IDENTITAS NASKAH.
+             *
+             * `slug` adalah penanda pemilik naskah -- BUKAN `session_key`.
+             * `session_key` berubah setiap siklus login (dan sering null kalau
+             * session belum-established), sedangkan naskah tersimpan lama. Kalau
+             * naskah diikat ke `session_key`, semua naskah dari siklus
+             * sebelumnya kehilangan pemiliknya.
+             *
+             * Format: huruf kecil, angka, dan `-`. Dipakai scraper sebagai
+             * `SRIKANDI_CLIENT_SLUG` dan sebagai bagian path endpoint.
+             */
+            $table->string('slug', 64)->unique();
+
+            $table->string('nama', 191);
+
+            // 🔴 Semua kolom di bawah dienkripsi di level kolom (cast `encrypted`).
+            $table->text('username')->nullable();
+            $table->text('password')->nullable();
+
+            // TOTP: secret-nya dienkripsi, `totp_digits`/`totp_period` tidak
+            // sensitif dan disimpan polos supaya scraper tidak perlu dekripsi
+            // hanya untuk tahu algoritmanya.
+            $table->text('totp_secret')->nullable();
+            $table->unsignedTinyInteger('totp_digits')->default(6);
+            $table->unsignedSmallInteger('totp_period')->default(30);
+
+            // Gemini hanya untuk OCR captcha halaman LOGIN, bukan resolver OTP.
+            $table->text('gemini_api_key')->nullable();
+            $table->string('gemini_model', 191)->nullable();
+            $table->string('gemini_fallback_model', 191)->nullable();
+
+            /**
+             * Nomor TUJUAN OTP -- bukan nomor device.
+             *
+             * Device pengirim ditentukan oleh `wara_routes`. Nomor ini adalah
+             * tempat kode OTP dikirim. Karena itu `phone` di sini BUKAN nomor
+             * WhatsApp yang dipakai login, dan wajib diisi manual: nomor tujuan
+             * sering berbeda dari device (mis. device kantor, tujuan HP pribadi).
+             *
+             * UI menyediakan tombol "isi dari device" untuk mengurangi salah ketik,
+             * tapi hasilnya tetap bisa diubah manual.
+             */
+            $table->text('phone')->nullable();
+            $table->string('phone_index', 64)->nullable()->index();
+
+            // 🔴 1:1 dengan Wara client. Alasan ada di docblock atas.
+            $table->uuid('wara_client_id')->nullable()->unique();
+
+            // Purpose Wara yang dipakai untuk request OTP. Satu device satu
+            // purpose; client tanpa device tidak punya purpose.
+            $table->string('otp_purpose', 32)->nullable();
+
+            // Notifikasi. Fase pertama WhatsApp saja; `email` sengaja TIDAK ada
+            // di enum karena `mail.default = log` di semua env saat ini --
+            // artinya "email" berarti nulis ke log, bukan kirim ke inbox.
+            $table->boolean('notify_enabled')->default(false);
+            $table->enum('notify_via', ['none', 'whatsapp'])->default('none');
+            $table->text('notify_phone')->nullable();
+            $table->string('notify_phone_index', 64)->nullable()->index();
+            $table->string('notify_purpose', 32)->nullable();
+
+            $table->boolean('is_active')->default(true);
+
+            /**
+             * 🔴 `credentials_rotated_at` dipakai scraper untuk deteksi.
+             *
+             * Scraper membandingkan nilai ini dengan `last_login_at` yang
+             * dilaporkan lewat heartbeat. Kalau kredensial lebih baru dari login
+             * terakhir, berarti Bale punya kredensial yang belum pernah dicoba --
+             * itu sebabnya banner "kredensial diganti" muncul tanpa perlu push
+             * ke Bale.
+             */
+            $table->timestamp('credentials_rotated_at')->nullable();
+            $table->timestamp('last_login_at')->nullable();
+            $table->timestamp('last_naskah_at')->nullable();
+
+            // 🔴 Jangan pernah serialisasi ke API/payload tanpa disaring.
+            $table->timestamp('last_error_at')->nullable();
+            $table->text('last_error_message')->nullable();
+
+            $table->timestamps();
+
+            // Grafik "client mana yang rusak" tanpa scan seluruh tabel.
+            $table->index(['is_active', 'last_error_at']);
+            $table->index('last_login_at');
+        });
+
+        $this->normalizeWaraClient();
+    }
+
+    public function down(): void
+    {
+        $this->restoreWaraClient();
+
+        Schema::dropIfExists('srikandi_clients');
+    }
+
+    /**
+     * Pastikan client Wara `Srikandi (Package)` ada, pindahkan route `otp`, lalu
+     * bongkar client bawaan.
+     *
+     * 🔴 MENGAPA BAGIAN INI ADA
+     *
+     * `srikandi_otp_states` mencari device lewat `OtpService::sessionForPurpose()`,
+     * dan fungsi itu mencari `wara_routes` HANYA berdasarkan `purpose` - tanpa
+     * `client_id`. Selama hanya ada satu client, itu tidak kelihatan.
+     *
+     * Begitu ada client kedua dengan purpose yang sama, dia akan mengambil route
+     * yang paling lama dibuat tanpa tahu siapa pemiliknya. Persis masalah yang
+     * sudah dibongkar di `SendClientResolver`: request dari A bisa berlabuh di B.
+     *
+     * Bagian ini tidak memperbaiki query-nya (itu di `OtpService`), tapi
+     * memastikan setiap package punya client sendiri sehingga filter `client_id`
+     * punya arti.
+     *
+     * MENGAPA CLIENT BAWAAN DIHAPUS
+     *
+     * `Wara (bawaan)` dibuat oleh `create_wara_routes_table` hanya untuk
+     * menampung route yang tadinya menempel di `wara_sessions.purpose`. Sekarang
+     * penugasan milik package, jadi penampung generik itu tidak lagi punya alasan
+     * hidup.
+     *
+     * 🔴 ROUTE `notifikasi` IKUT DIHAPUS, BUKAN DIPINDAHKAN.
+     *
+     * Route itu tadinya dibiarkan karena `Nawasara\Wago` masih dipakai. Sekarang
+     * kedua package sudah di-uninstall, jadi tidak ada lagi yang memakainya.
+     * Route yang tidak dipakai bukan "netral" - dia tetap muncul di UI
+     * `Wara > Client` dan tetap bisa dipakai kalau ada yang mengirim dengan
+     * `purpose=notifikasi`, hanya ke device yang tidak ada artinya bagi siapa pun.
+     *
+     * Device `wago prod` sendiri TIDAK disentuh. Device itu milik GOWA, bukan
+     * milik package - `wara:sync-devices` akan mengembalikannya kalau masih
+     * terdaftar di gateway.
+     *
+     * 🔴 DIJALANKAN DUA KALI AMAN. Semua langkah dicek kondisinya lebih dulu.
+     * Fresh install tidak punya `Wara (bawaan)` sama sekali (tidak ada data lama
+     * untuk dipindah), jadi bagian ini no-op di sana - dan itu benar, bukan
+     * kegagalan.
+     *
+     * 🔴 Dibuat `public` supaya test bisa memanggilnya langsung dari file yang
+     * sudah dipublish. Memanggil `up()` di test tidak mungkin: tabel sudah
+     * dibuat `RefreshDatabase`, jadi `Schema::create` akan gagal.
+     */
+    public function normalizeWaraClient(): void
+    {
+        // 🔴 `wara_clients` belum ada = bale/wara belum ter-install. Lewati,
+        // jangan gagal: urutan install dua package tidak dijamin, dan
+        // `srikandi:install` sudah akan complain sendiri.
+        if (! Schema::hasTable('wara_clients')) {
+            return;
+        }
+
+        DB::transaction(function () {
+            $target = $this->ensureSrikandiClient();
+
+            if ($target !== null) {
+                $this->moveRoute($target);
+            }
+
+            $this->dropLegacyClient();
+        });
+    }
+
+    /**
+     * Kebalikan `normalizeWaraClient()`: kembalikan route `otp` ke client bawaan
+     * dan hapus client Srikandi.
+     */
+    public function restoreWaraClient(): void
+    {
+        if (! Schema::hasTable('wara_clients')) {
+            return;
+        }
+
+        DB::transaction(function () {
+            $target = DB::table('wara_clients')->where('name', self::SRIKANDI_CLIENT)->first();
+
+            if ($target === null) {
+                return;
+            }
+
+            // Kembalikan route `otp` ke client bawaan.
+            $legacy = DB::table('wara_clients')->where('name', self::LEGACY_CLIENT)->first();
+
+            if ($legacy === null) {
+                $this->line('  Lewati: client bawaan tidak ada, route tidak bisa dikembalikan.');
+
+                return;
+            }
+
+            DB::table('wara_routes')
+                ->where('client_id', $target->id)
+                ->where('purpose', self::MIGRATED_PURPOSE)
+                ->update(['client_id' => $legacy->id]);
+
+            DB::table('wara_clients')->where('id', $target->id)->delete();
+        });
+    }
+
+    /**
+     * Pastikan client Srikandi ada. Type `service`: tidak ada `api_token_id`
+     * karena Srikandi dipanggil dari dalam proses Bale.
+     */
+    protected function ensureSrikandiClient(): ?object
+    {
+        $existing = DB::table('wara_clients')->where('name', self::SRIKANDI_CLIENT)->first();
+
+        if ($existing !== null) {
+            return $existing;
+        }
+
+        $id = (string) Str::uuid();
+
+        DB::table('wara_clients')->insert([
+            'id' => $id,
+            // `bale_id` NULL: client package internal, bukan organisasi penyewa.
+            'bale_id' => null,
+            'type' => 'service',
+            'api_token_id' => null,
+            'name' => self::SRIKANDI_CLIENT,
+            'is_active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->line('  + Client Wara: '.self::SRIKANDI_CLIENT);
+
+        return DB::table('wara_clients')->where('id', $id)->first();
+    }
+
+    /**
+     * Pindahkan route `otp` dari client bawaan ke client Srikandi.
+     *
+     * 🔴 Kalau client Srikandi sudah punya route `otp` (mis. karena `down()`
+     * lalu `up()`), yang bawaan DIHAPUS bukan yang dipindah. Dua route dengan
+     * purpose sama di dua client itu sah, tapi yang satu tidak akan pernah
+     * dipakai `OtpService` - jadi route yatim lebih bersih dihapus.
+     */
+    protected function moveRoute(object $target): void
+    {
+        $legacy = DB::table('wara_clients')->where('name', self::LEGACY_CLIENT)->first();
+
+        if ($legacy === null) {
+            return;
+        }
+
+        $route = DB::table('wara_routes')
+            ->where('client_id', $legacy->id)
+            ->where('purpose', self::MIGRATED_PURPOSE)
+            ->first();
+
+        if ($route === null) {
+            return;
+        }
+
+        $alreadyOwned = DB::table('wara_routes')
+            ->where('client_id', $target->id)
+            ->where('purpose', self::MIGRATED_PURPOSE)
+            ->exists();
+
+        if ($alreadyOwned) {
+            DB::table('wara_routes')->where('id', $route->id)->delete();
+
+            $this->line('  Route "'.self::MIGRATED_PURPOSE.'" sudah ada di client Srikandi; yang bawaan dihapus.');
+
+            return;
+        }
+
+        DB::table('wara_routes')->where('id', $route->id)->update(['client_id' => $target->id]);
+
+        $this->line('  Route "'.$route->purpose.'" -> "'.$route->device_id.'" dipindah ke '.self::SRIKANDI_CLIENT);
+    }
+
+    /**
+     * Hapus route yang sudah tidak punya pemilik, lalu client bawaannya.
+     *
+     * 🔴 Route `notifikasi` dihapus, bukan dipindah. Package `Nawasara\Wago`
+     * sudah di-uninstall, jadi tidak ada lagi yang memakainya. Device
+     * `wago prod` sendiri tetap ada di `wara_sessions` - itu milik GOWA.
+     *
+     * 🔴 APABILA ada route lain yang tidak dikenal, migrasi BERHENTI.
+     *
+     * Menebak jalan untuk route yang tidak dikenal berarti menghapus keputusan
+     * admin tanpa persetujuan. Route yang tidak kita kenali harus diputuskan
+     * manusia - dan pesannya menyebut purpose-nya supaya bisa langsung
+     * ditindaklanjuti.
+     */
+    protected function dropLegacyClient(): void
+    {
+        $legacy = DB::table('wara_clients')->where('name', self::LEGACY_CLIENT)->first();
+
+        if ($legacy === null) {
+            return;
+        }
+
+        $orphans = DB::table('wara_routes')->where('client_id', $legacy->id)->get();
+
+        $movable = $orphans->where('purpose', self::ORPHANED_PURPOSE);
+
+        foreach ($movable as $route) {
+            DB::table('wara_routes')->where('id', $route->id)->delete();
+
+            $this->line(sprintf(
+                '  - Route "%s" -> "%s" dihapus (package pemiliknya sudah uninstalled)',
+                $route->purpose,
+                $route->device_id
+            ));
+        }
+
+        $remaining = DB::table('wara_routes')->where('client_id', $legacy->id)->get();
+
+        if ($remaining->isNotEmpty()) {
+            $purposes = $remaining->pluck('purpose')->implode(', ');
+
+            throw new RuntimeException(sprintf(
+                'Client "%s" masih memegang route yang tidak dikenal: %s. Route '
+                .'ini bukan milik bale/srikandi dan tidak ikut dihapus. Petakan ke '
+                .'client yang tepat di `Wara > Client`, atau hapus manual sebelum '
+                .'menjalankan ulang migrasi ini.',
+                self::LEGACY_CLIENT,
+                $purposes
+            ));
+        }
+
+        DB::table('wara_clients')->where('id', $legacy->id)->delete();
+
+        $this->line('  - Client Wara: '.self::LEGACY_CLIENT);
+    }
+
+    /**
+     * Laravel screaming pada output migrasi, bukan echo - supaya tidak ikut
+     * tercetak di production tanpa disadari.
+     */
+    protected function line(string $message): void
+    {
+        if (method_exists($this, 'getIo') && $this->getIo() !== null) {
+            $this->getIo()->writeln($message);
+        }
+    }
+};
