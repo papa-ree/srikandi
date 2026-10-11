@@ -78,6 +78,8 @@ use Spatie\Activitylog\Support\LogOptions;
  * @property string|null $notify_phone
  * @property string|null $notify_phone_index
  * @property string|null $notify_purpose
+ * @property Carbon|null $notify_baseline_at
+ * @property int $notify_pending_count
  * @property bool $is_active
  * @property Carbon|null $credentials_rotated_at
  * @property Carbon|null $last_login_at
@@ -190,6 +192,7 @@ class SrikandiClient extends Model
         'last_login_at' => 'datetime',
         'last_naskah_at' => 'datetime',
         'last_error_at' => 'datetime',
+        'notify_baseline_at' => 'datetime',
     ];
 
     /**

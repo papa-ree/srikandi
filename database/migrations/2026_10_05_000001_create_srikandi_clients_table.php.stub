@@ -141,6 +141,28 @@ return new class extends Migration
             $table->string('notify_phone_index', 64)->nullable()->index();
             $table->string('notify_purpose', 32)->nullable();
 
+            /**
+             * 🔴 Kapan notifikasi naskah baru mulai dihitung (S5.2).
+             *
+             * Harvest pertama per `sumber` menyisipkan SEMUA naskah yang sudah
+             * ada. Kalau tiap baris baru langsung dinotifikasi, client baru akan
+             * mengirim ratusan pesan sekali jalan. Kolom ini mencatat siklus
+             * pertama yang benar-benar memasukkan naskah; notifikasi baru aktif
+             * setelah jendela redam (`srikandi.notify.baseline_grace_minutes`)
+             * lewat. NULL = belum pernah, jadi belum boleh mengirim.
+             */
+            $table->timestamp('notify_baseline_at')->nullable();
+
+            /**
+             * 🔴 Akumulator notifikasi per siklus (S5.2).
+             *
+             * `naskah-dinas` TIDAK mengirim notifikasi langsung: ia menambahkan
+             * `inserted` ke kolom ini. `heartbeat` (akhir siklus) adalah yang
+             * mengirim SATU pesan teragregasi lalu me-reset kolom ini ke 0.
+             * Nilai 0 = tidak ada yang menunggu kirim.
+             */
+            $table->unsignedInteger('notify_pending_count')->default(0);
+
             $table->boolean('is_active')->default(true);
 
             /**

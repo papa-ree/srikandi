@@ -4,8 +4,10 @@ namespace Bale\Srikandi\Http\Controllers;
 
 use Bale\Srikandi\Exceptions\SrikandiException;
 use Bale\Srikandi\Services\NaskahIngestService;
+use Bale\Srikandi\Services\NaskahNotifier;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
 
 /**
@@ -24,7 +26,10 @@ use Illuminate\Validation\Rule;
  */
 class NaskahIngestController extends SrikandiController
 {
-    public function __construct(protected NaskahIngestService $naskah) {}
+    public function __construct(
+        protected NaskahIngestService $naskah,
+        protected NaskahNotifier $notifier,
+    ) {}
 
     public function __invoke(Request $request): JsonResponse
     {
@@ -99,6 +104,27 @@ class NaskahIngestController extends SrikandiController
             return $this->failure($e);
         } catch (\Throwable $e) {
             return $this->unexpected($e);
+        }
+
+        // 🔴 AKUMULASI NOTIFIKASI — TIDAK BOLEH MENGGAGALKAN INGEST.
+        //
+        // Ingest sudah commit di titik ini; scraper sudah "selesai". Kalau
+        // akumulasi (atau apa pun di dalam notifier) meledak, respons tetap
+        // sukses — kalau tidak, scraper akan mengulang seluruh harvest dan
+        // mencoba menyingkirkan naskah yang sebenarnya sudah tersimpan.
+        //
+        // Di sini naskah baru hanya DITAMBAHKAN ke `notify_pending_count`.
+        // Pesannya baru dikirim saat `heartbeat` (akhir siklus) lewat
+        // `NaskahNotifier::tutupSiklus()`, supaya satu harvest yang dipecah jadi
+        // beberapa POST tetap menghasilkan satu notifikasi.
+        try {
+            $this->notifier->naskahMasuk($validated['sumber'], $counts['inserted']);
+        } catch (\Throwable $e) {
+            Log::warning('Gagal mengakumulasi notifikasi naskah baru.', [
+                'sumber' => $validated['sumber'],
+                'inserted' => $counts['inserted'],
+                'error' => $e->getMessage(),
+            ]);
         }
 
         return $this->ok([

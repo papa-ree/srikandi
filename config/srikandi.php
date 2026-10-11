@@ -51,6 +51,32 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Notifikasi naskah baru
+    |--------------------------------------------------------------------------
+    |
+    | Notifikasi diagregasi PER SIKLUS: `naskah-dinas` menambah
+    | `notify_pending_count`, dan `heartbeat` (akhir siklus) mengirim SATU pesan
+    | lalu me-reset counter. Jadi satu harvest yang dipecah menjadi beberapa POST
+    | tetap menghasilkan satu notifikasi.
+    |
+    | Harvest pertama per `sumber` menyisipkan SEMUA naskah yang sudah ada.
+    | Jendela redam ini mencegah badai pesan pada detik-detik itu: flush siklus
+    | pertama dilewati selama `baseline_grace_minutes` setelah baseline dicatat
+    | (counter tetap di-reset, jadi angkanya tidak bocor ke siklus berikutnya).
+    |
+    | Nilainya harus lebih besar dari durasi SATU harvest pertama (supaya flush
+    | di akhir harvest pertama ikut teredam), tapi cukup kecil supaya siklus
+    | berikutnya yang benar-benar baru tetap terkirim. Siklus scraper berkala,
+    | jadi 15 menit aman.
+    |
+    */
+
+    'notify' => [
+        'baseline_grace_minutes' => (int) env('SRIKANDI_NOTIFY_BASELINE_GRACE_MINUTES', 15),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Blind index untuk kolom terenkripsi
     |--------------------------------------------------------------------------
     |

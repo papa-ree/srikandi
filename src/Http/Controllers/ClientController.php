@@ -4,9 +4,11 @@ namespace Bale\Srikandi\Http\Controllers;
 
 use Bale\Srikandi\Exceptions\SrikandiException;
 use Bale\Srikandi\Models\SrikandiClient;
+use Bale\Srikandi\Services\NaskahNotifier;
 use Bale\Srikandi\Support\ErrorSanitizer;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Spatie\Activitylog\Models\Activity;
 
 /**
@@ -32,6 +34,8 @@ use Spatie\Activitylog\Models\Activity;
  */
 class ClientController extends SrikandiController
 {
+    public function __construct(protected NaskahNotifier $notifier) {}
+
     /**
      * `GET /clients` — daftar client untuk tear-down dan pemilihan account.
      *
@@ -146,6 +150,24 @@ class ClientController extends SrikandiController
                 $validated['error_message'] ?? null
             ),
         ], fn ($value) => $value !== null))->save();
+
+        // 🔴 FLUSH NOTIFIKASI DI AKHIR SIKLUS (S5.2).
+        //
+        // Heartbeat datang PERSIS SEKALI per siklus scraper (KONTRAK §3.4/§8,
+        // sukses maupun gagal) — jadi ini batas yang benar untuk menggabungkan
+        // naskah baru yang di-ingest dalam beberapa POST menjadi SATU pesan.
+        //
+        // Sama seperti ingest: notifikasi tidak boleh menggagalkan heartbeat.
+        // Laporannya sudah tersimpan; kalau WhatsApp/antrean bermasalah, respons
+        // tetap sukses.
+        try {
+            $this->notifier->tutupSiklus($slug);
+        } catch (\Throwable $e) {
+            Log::warning('Gagal menutup siklus notifikasi naskah baru.', [
+                'slug' => $slug,
+                'error' => $e->getMessage(),
+            ]);
+        }
 
         return $this->ok([
             // 🔴 BALE yang menentukan "kredensial belum pernah dicoba", bukan
