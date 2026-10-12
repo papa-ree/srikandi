@@ -81,8 +81,9 @@ return [
     |--------------------------------------------------------------------------
     |
     | Dipakai `Bale\Srikandi\Support\BlindIndex` untuk menghitung `phone_index`
-    | dan `notify_phone_index`, supaya nomor yang terenkripsi tetap bisa dicari
-    | tanpa didekripsi.
+    | (nomor akun) dan `value_index` (`srikandi_notify_recipients`, nomor
+    | penerima notifikasi naskah baru), supaya nomor yang terenkripsi tetap
+    | bisa dicari tanpa didekripsi.
     |
     | 🔴 WAJIB DIISI, DAN TIDAK BOLEH SAMA DENGAN `APP_KEY`.
     |

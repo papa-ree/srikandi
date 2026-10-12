@@ -16,7 +16,7 @@
 
         <div class="w-full sm:max-w-xs">
             <label for="srikandi-client-phone-search" class="sr-only">
-                {{ __('Cari berdasarkan nomor tujuan') }}
+                {{ __('Cari berdasarkan nomor akun') }}
             </label>
 
             <div class="relative">
@@ -24,7 +24,7 @@
                     type="search"
                     autocomplete="off"
                     inputmode="tel"
-                    placeholder="{{ __('Cari nomor tujuan…') }}"
+                    placeholder="{{ __('Cari nomor akun…') }}"
                     wire:model.live.debounce.400ms="phoneSearch"
                     class="w-full rounded-md border-gray-300 dark:border-gray-700 dark:bg-gray-900
                            text-sm text-gray-900 dark:text-gray-100 shadow-sm
@@ -41,7 +41,7 @@
             </div>
 
             <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                {{ __('Cocok persis dengan nomor tujuan, boleh juga ditulis lokal (0812…) atau internasional (62812…).') }}
+                {{ __('Cocok persis dengan nomor akun, boleh juga ditulis lokal (0812…) atau internasional (62812…).') }}
             </p>
         </div>
 

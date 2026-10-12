@@ -1,8 +1,11 @@
 <?php
 
 use Bale\Srikandi\Models\SrikandiClient;
+use Bale\Srikandi\Models\SrikandiNotifyRecipient;
 use Bale\Srikandi\Notifications\NaskahBaruDiterima;
+use Bale\Srikandi\Support\OtpPhone;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Notifications\AnonymousNotifiable;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Notification;
 
@@ -21,20 +24,51 @@ uses(RefreshDatabase::class)
 
 /**
  * Seed client dengan konfigurasi notifikasi.
+ *
+ * 🔴 Penerima BUKAN lagi kolom `notify_phone`. Daftar penerima diberikan
+ * sebagai argumen kedua supaya test bisa memilih "tanpa penerima" atau
+ * "beberapa penerima" tanpa menyentuh skema.
+ *
+ * @param  list<string>  $recipients  nomor (bentuk apa pun, dinormalisasi)
  */
-function srikandiNotifyClient(array $overrides = []): SrikandiClient
+function srikandiNotifyClient(array $overrides = [], array $recipients = ['628000000001']): SrikandiClient
 {
     $client = SrikandiClient::query()->where('slug', 'default')->firstOrFail();
 
     $client->forceFill(array_merge([
         'notify_enabled' => true,
         'notify_via' => 'whatsapp',
-        'notify_phone' => '+628000000001',
         'notify_baseline_at' => null,
         'notify_pending_count' => 0,
     ], $overrides))->save();
 
+    foreach ($recipients as $phone) {
+        tambahPenerima($client, $phone);
+    }
+
     return $client->refresh();
+}
+
+/**
+ * Tambah satu penerima notifikasi ke client.
+ */
+function tambahPenerima(
+    SrikandiClient $client,
+    string $phone,
+    bool $active = true,
+    ?string $label = null,
+): SrikandiNotifyRecipient {
+    $recipient = new SrikandiNotifyRecipient;
+    $recipient->forceFill(['client_id' => $client->getKey()]);
+    $recipient->fill([
+        'type' => SrikandiNotifyRecipient::TYPE_PHONE,
+        'label' => $label,
+        'is_active' => $active,
+    ]);
+    $recipient->setValue(app(OtpPhone::class)->normalize($phone));
+    $recipient->save();
+
+    return $recipient;
 }
 
 /**
@@ -121,7 +155,7 @@ describe('Notifikasi naskah baru (S5.2)', function () {
         akhiriSiklus();
 
         Notification::assertSentTo(
-            Notification::route('wara', '+628000000001'),
+            Notification::route('wara', '628000000001'),
             NaskahBaruDiterima::class,
             function ($notification) {
                 return $notification->jumlah === 1;
@@ -163,7 +197,7 @@ describe('Notifikasi naskah baru (S5.2)', function () {
         akhiriSiklus();
         Notification::assertSentTimes(NaskahBaruDiterima::class, 1);
         Notification::assertSentTo(
-            Notification::route('wara', '+628000000001'),
+            Notification::route('wara', '628000000001'),
             NaskahBaruDiterima::class,
             function ($notification) {
                 return $notification->jumlah === 10
@@ -186,7 +220,7 @@ describe('Notifikasi naskah baru (S5.2)', function () {
         akhiriSiklus();
 
         Notification::assertSentTo(
-            Notification::route('wara', '+628000000001'),
+            Notification::route('wara', '628000000001'),
             NaskahBaruDiterima::class,
             fn ($notification) => $notification->jumlah === 2
         );
@@ -202,7 +236,7 @@ describe('Notifikasi naskah baru (S5.2)', function () {
         akhiriSiklus();
 
         Notification::assertSentTo(
-            Notification::route('wara', '+628000000001'),
+            Notification::route('wara', '628000000001'),
             NaskahBaruDiterima::class,
             fn ($notification) => $notification->jumlah === 1
         );
@@ -268,23 +302,61 @@ describe('Notifikasi naskah baru (S5.2)', function () {
         Notification::assertNothingSent();
     });
 
-    it('Fallback ke phone kalau notify_phone kosong', function () {
+    it('TIDAK mengirim kalau client tidak punya penerima', function () {
         Notification::fake();
         Config::set('srikandi.notify.baseline_grace_minutes', 0);
 
-        srikandiNotifyClient([
-            'notify_phone' => null,
-            'phone' => '+628123456789',
-            'notify_baseline_at' => now()->subHour(),
-        ]);
+        // Tanpa penerima sama sekali. Dulu ini fallback ke `phone` (nomor OTP);
+        // sekarang penerima adalah satu-satunya sumber, jadi tidak ada kirim.
+        srikandiNotifyClient(['notify_baseline_at' => now()->subHour()], []);
 
         kirimNaskah([naskahItemNotify()])->assertJsonPath('inserted', 1);
         akhiriSiklus();
 
-        Notification::assertSentTo(
-            Notification::route('wara', '+628123456789'),
-            NaskahBaruDiterima::class
-        );
+        Notification::assertNothingSent();
+    });
+
+    it('mengirim ke SEMUA penerima aktif dan melewati yang nonaktif', function () {
+        Notification::fake();
+        Config::set('srikandi.notify.baseline_grace_minutes', 0);
+
+        $client = srikandiNotifyClient(['notify_baseline_at' => now()->subHour()], []);
+
+        tambahPenerima($client, '628000000001');
+        tambahPenerima($client, '628000000002', active: false);
+        tambahPenerima($client, '628000000003', label: 'Admin');
+
+        kirimNaskah([naskahItemNotify()])->assertJsonPath('inserted', 1);
+        akhiriSiklus();
+
+        // 🔴 AnonymousNotifiable::getKey() selalu null, jadi SEMUA tujuan
+        // `route()` menempati bucket yang sama di `NotificationFake`. Karena
+        // itu pemisahan per-nomor HARUS lewat callback yang membaca
+        // `$notifiable->routes['wara']`, bukan lewat argumen notifiable.
+        $terkirimKe = fn (string $nomor) => function ($notification, $channels, $notifiable) use ($nomor): bool {
+            return ($notifiable->routes['wara'] ?? null) === $nomor;
+        };
+
+        Notification::assertSentTimes(NaskahBaruDiterima::class, 2);
+        Notification::assertSentTo(new AnonymousNotifiable, NaskahBaruDiterima::class, $terkirimKe('628000000001'));
+        Notification::assertSentTo(new AnonymousNotifiable, NaskahBaruDiterima::class, $terkirimKe('628000000003'));
+        Notification::assertNotSentTo(new AnonymousNotifiable, NaskahBaruDiterima::class, $terkirimKe('628000000002'));
+    });
+
+    it('mendeduplikasi nomor penerima yang sama setelah normalisasi', function () {
+        Notification::fake();
+        Config::set('srikandi.notify.baseline_grace_minutes', 0);
+
+        $client = srikandiNotifyClient(['notify_baseline_at' => now()->subHour()], []);
+
+        // Bentuk berbeda, nomor sama setelah dinormalisasi.
+        tambahPenerima($client, '628000000001');
+        tambahPenerima($client, '+628000000001');
+
+        kirimNaskah([naskahItemNotify()])->assertJsonPath('inserted', 1);
+        akhiriSiklus();
+
+        Notification::assertSentTimes(NaskahBaruDiterima::class, 1);
     });
 
     it('heartbeat tanpa naskah tertunda tetap sukses dan tidak mengirim', function () {

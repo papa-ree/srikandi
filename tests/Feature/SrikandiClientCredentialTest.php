@@ -383,7 +383,7 @@ describe('rotasi kredensial', function () {
 });
 
 describe('kesiapan client untuk scraper', function () {
-    it('butuh username, password, DAN nomor tujuan', function () {
+    it('butuh username, password, DAN nomor akun', function () {
         $client = SrikandiClient::query()->create(['slug' => 'uji-kredensial', 'nama' => 'Uji']);
 
         // Belum ada apa-apa.

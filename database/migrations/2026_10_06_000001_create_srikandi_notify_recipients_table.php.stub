@@ -1,0 +1,83 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+/**
+ * Penerima notifikasi naskah baru milik satu client Srikandi.
+ *
+ * 🔴 HANYA UNTUK NASKAH BARU
+ *
+ * Notifikasi OTP gagal/kedaluwarsa TIDAK lewat tabel ini -- itu dikirim ke
+ * `srikandi_clients.phone` (nomor akun). Tabel ini khusus notifikasi naskah
+ * baru (S5.2).
+ *
+ * 🔴 KENAPA TABEL TERPISAH, BUKAN SATU KOLOM `notify_phone`
+ *
+ * Sebelumnya satu client hanya punya satu nomor notifikasi. Kenyataannya satu
+ * client butuh BEBERAPA penerima (mis. operator + atasan), dan daftarnya bisa
+ * berubah tanpa menyentuh kredensial client. Menaruh daftar di satu kolom
+ * berarti JSON di dalam kolom: tidak bisa di-query, tidak bisa punya flag
+ * aktif per baris, dan validasi jadi urusan pemanggil — bukan database.
+ *
+ * 🔴 `type` SUDAH ADA SEJAK AWAL, TAPI HANYA `phone` YANG DIPAKAI
+ *
+ * Rencananya penerima boleh berupa nomor telepon ATAU id grup WhatsApp. Namun
+ * jalur kirim `bale/wara` saat ini menormalkan semua tujuan sebagai nomor
+ * telepon (`WaraManager` -> `PhoneNumber::toInternational()`) dan selalu
+ * menempelkan sufiks JID perorangan (`GowaGateway`) — id grup akan rusak
+ * sebelum sampai gateway. Dukungan grup menuntut perubahan kontrak di
+ * `bale/wara`, jadi untuk sekarang hanya `phone` yang diizinkan. Kolom `type`
+ * disiapkan supaya menambah `group` nanti tidak perlu migrasi baru.
+ *
+ * 🔴 `value` TERENKRIPSI, `value_index` UNTUK DEDUPLIKASI
+ *
+ * `value` memakai cast `encrypted` (AES-256-CBC, kunci dari APP_KEY) — sama
+ * seperti `phone`/`notify_phone` di `srikandi_clients`. Karena terenkripsi,
+ * `value` tidak bisa dipakai di `WHERE`; `value_index` (HMAC dari nilai
+ * ternormalisasi, lihat `BlindIndex`) yang dipakai untuk mencari duplikat dan
+ * menegakkan "satu nomor sekali per client".
+ */
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::create('srikandi_notify_recipients', function (Blueprint $table) {
+            $table->uuid('id')->primary();
+
+            // 🔴 Tanpa foreign key: `srikandi_clients` juga tidak memakai FK, dan
+            // client tidak pernah dihapus dari UI (pencabutan lewat `is_active`).
+            // Index tetap ada supaya pencarian per client tidak scan tabel.
+            $table->uuid('client_id')->index();
+
+            /**
+             * Jenis penerima. Hanya `phone` yang berfungsi saat ini; `group`
+             * disiapkan untuk nanti (lihat catatan atas). Lebar 16 char.
+             */
+            $table->string('type', 16)->default('phone');
+
+            // Nama bebas untuk penerima (mis. "Operator Piket"). Tidak sensitif.
+            $table->string('label', 191)->nullable();
+
+            // Nomor penerima terenkripsi (nomor telepon). Lihat catatan atas.
+            $table->text('value');
+            $table->string('value_index', 64)->nullable()->index();
+
+            // Penerima bisa dimatikan tanpa dihapus — supaya riwayat nominal
+            // dan labelnya tahu kalau penerimanya cuma sedang tidak dipakai.
+            $table->boolean('is_active')->default(true);
+
+            $table->timestamps();
+
+            // "Penerima aktif client X" adalah query paling sering — dipakai
+            // `NaskahNotifier` tiap flush siklus.
+            $table->index(['client_id', 'is_active']);
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('srikandi_notify_recipients');
+    }
+};

@@ -101,18 +101,51 @@ class NaskahNotifier
             return;
         }
 
-        // Fallback ke `phone`: nomor OTP biasanya notifikasi. `phone` dan
-        // `notify_phone` sama-sama terenkripsi, jadi `?:` bekerja pada nilai
-        // yang sudah didekripsi.
-        $phone = $client->notify_phone ?: $client->phone;
+        $this->kirimKePenerima($client, $pending);
+    }
 
-        if (blank($phone)) {
+    /**
+     * Kirim SATU notifikasi teragregasi ke SETIAP penerima aktif client.
+     *
+     * 🔴 Satu notifikasi per penerima, bukan satu untuk semua.
+     *
+     * `NaskahBaruDiterima` tidak menyimpan tujuan; tujuan ditentukan route
+     * `Notification::route('wara', ...)`. Jadi penerima banyak = beberapa kali
+     * `notify()` dengan objek notifikasi yang sama. Dedup berdasarkan nilai
+     * ternormalisasi supaya satu nomor yang tercatat dua kali (tidak mungkin
+     * lewat form, tapi mungkin lewat data lama) tidak dikirimi dua pesan.
+     *
+     * 🔴 TIDAK ADA fallback ke `phone`.
+     *
+     * Dulu `notify_phone` jatuh ke `phone` (nomor OTP) kalau kosong. Sekarang
+     * penerima adalah SATU-SATUNYA sumber; client tanpa penerima aktif tidak
+     * mengirim apa pun. Diam di sini lebih benar daripada mengirim nomor OTP ke
+     * tempat yang tidak diminta admin.
+     */
+    private function kirimKePenerima(SrikandiClient $client, int $pending): void
+    {
+        $recipients = $client->notifyRecipients()
+            ->where('is_active', true)
+            ->get();
+
+        if ($recipients->isEmpty()) {
             return;
         }
 
-        Notification::route('wara', $phone)->notify(
-            new NaskahBaruDiterima($client->nama, $pending),
-        );
+        $notification = new NaskahBaruDiterima($client->nama, $pending);
+        $sudahDikirim = [];
+
+        foreach ($recipients as $recipient) {
+            $tujuan = (string) $recipient->value;
+
+            if ($tujuan === '' || isset($sudahDikirim[$tujuan])) {
+                continue;
+            }
+
+            $sudahDikirim[$tujuan] = true;
+
+            Notification::route('wara', $tujuan)->notify($notification);
+        }
     }
 
     /**

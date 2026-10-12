@@ -8,6 +8,7 @@ use Bale\Wara\Models\WaraClient;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 use Spatie\Activitylog\Support\LogOptions;
 
@@ -75,8 +76,6 @@ use Spatie\Activitylog\Support\LogOptions;
  * @property string|null $otp_purpose
  * @property bool $notify_enabled
  * @property string $notify_via
- * @property string|null $notify_phone
- * @property string|null $notify_phone_index
  * @property string|null $notify_purpose
  * @property Carbon|null $notify_baseline_at
  * @property int $notify_pending_count
@@ -170,9 +169,7 @@ class SrikandiClient extends Model
         'totp_secret',
         'gemini_api_key',
         'phone',
-        'notify_phone',
         'phone_index',
-        'notify_phone_index',
     ];
 
     protected $casts = [
@@ -181,7 +178,6 @@ class SrikandiClient extends Model
         'totp_secret' => 'encrypted',
         'gemini_api_key' => 'encrypted',
         'phone' => 'encrypted',
-        'notify_phone' => 'encrypted',
 
         'totp_digits' => 'integer',
         'totp_period' => 'integer',
@@ -211,6 +207,22 @@ class SrikandiClient extends Model
     }
 
     /**
+     * Penerima notifikasi NASKAH BARU milik client ini (S5.2).
+     *
+     * 🔴 BEDA PERAN DARI `phone` (nomor akun): `phone` menerima OTP dari
+     * Srikandi DAN notifikasi OTP gagal/kedaluwarsa; daftar ini HANYA untuk
+     * notifikasi naskah baru. Notifikasi OTP tidak boleh dikirim ke sini.
+     *
+     * 🔴 Menggantikan kolom tunggal `notify_phone` yang lama. Satu client boleh
+     * punya beberapa penerima; yang benar-benar dikirimi adalah baris dengan
+     * `is_active = true` (disaring di `NaskahNotifier::tutupSiklus()`).
+     */
+    public function notifyRecipients(): HasMany
+    {
+        return $this->hasMany(SrikandiNotifyRecipient::class, 'client_id');
+    }
+
+    /**
      * 🔴 Set kredensial client dalam satu jalan.
      *
      * Satu-satunya jalan masuk ke kolom password/totp/gemini. Dipanggil dari
@@ -223,7 +235,7 @@ class SrikandiClient extends Model
      *
      * @param  array<string, mixed>  $attributes  Kunci: username, password,
      *                                            totp_secret, gemini_api_key,
-     *                                            phone, notify_phone.
+     *                                            phone.
      */
     public function setCredentials(array $attributes): self
     {
@@ -233,7 +245,6 @@ class SrikandiClient extends Model
             'totp_secret',
             'gemini_api_key',
             'phone',
-            'notify_phone',
         ];
 
         foreach ($encrypted as $key) {
@@ -288,7 +299,7 @@ class SrikandiClient extends Model
      *   setiap kali form disimpan tanpa perubahan, lalu memberi tahu scraper
      *   kredensialnya baru. Scraper akan terlihat "sering login ulang" dan
      *   tidak ada yang mengaitkannya dengan password yang hilang.
-     * - Menganggap `null` sebagai "jangan sentuh" membuat nomor tujuan tidak
+     * - Menganggap `null` sebagai "jangan sentuh" membuat nomor akun tidak
      *   bisa dikosongkan. Jadi `null` harus berarti hapus, dan pemanggil yang
      *   membatalkan nomor mengirim `null` secara eksplisit.
      */
@@ -311,11 +322,11 @@ class SrikandiClient extends Model
     }
 
     /**
-     * Hitung ulang `phone_index` dan `notify_phone_index`.
+     * Hitung ulang `phone_index`.
      *
-     * 🔴 Dipanggil setiap `phone`/`notify_phone` berubah. Kalau kolom index
-     * tidak ikut ditulis, pencarian by-nomor diam-diam jadi salah -- bukan error,
-     * karena query-nya tetap jalan, hanya mengembalikan client yang salah.
+     * 🔴 Dipanggil setiap `phone` berubah. Kalau kolom index tidak ikut ditulis,
+     * pencarian by-nomor diam-diam jadi salah -- bukan error, karena query-nya
+     * tetap jalan, hanya mengembalikan client yang salah.
      */
     protected function syncPhoneIndexes(): void
     {
@@ -323,10 +334,6 @@ class SrikandiClient extends Model
 
         if ($this->isDirty('phone')) {
             $this->setAttribute('phone_index', $index->make($this->getAttribute('phone')) ?: null);
-        }
-
-        if ($this->isDirty('notify_phone')) {
-            $this->setAttribute('notify_phone_index', $index->make($this->getAttribute('notify_phone')) ?: null);
         }
     }
 
@@ -372,7 +379,7 @@ class SrikandiClient extends Model
     }
 
     /**
-     * Cari client by nomor tujuan, lewat blind index.
+     * Cari client by nomor akun, lewat blind index.
      *
      * 🔴 `wherePhone()` yang biasa TIDAK bisa dipakai di sini: `phone` terenkripsi,
      * jadi `where('phone', '628123')` tidak akan pernah cocok -- bukan error,
@@ -382,11 +389,6 @@ class SrikandiClient extends Model
     public function scopeWherePhone($query, string $phone)
     {
         return $query->where('phone_index', (new BlindIndex)->make($phone));
-    }
-
-    public function scopeWhereNotifyPhone($query, string $phone)
-    {
-        return $query->where('notify_phone_index', (new BlindIndex)->make($phone));
     }
 
     public function scopeActive($query)

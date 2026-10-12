@@ -17,7 +17,7 @@ use Illuminate\Support\Facades\Route;
 | 🔴 `create` memakai permission `update`, bukan `create`.
 | Ada permissions `srikandi.client.create` dan `.delete`, tapi keduanya tidak
 | dipakai di sini. Menambah client MEMUBAH client yang sudah ada dari sisi
-| scraper — device, kredensial, dan nomor tujuan — jadi ini operasi update
+| scraper — device, kredensial, dan nomor akun — jadi ini operasi update
 | yang dibatasi pada "belum ada baris". `delete` tidak dipakai karena client
 | tidak boleh dihapus sama sekali; mencabut akses dilakukan dengan
 | `is_active = false` lewat form update.

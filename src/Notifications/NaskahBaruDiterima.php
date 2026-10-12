@@ -24,10 +24,11 @@ use Illuminate\Notifications\Notification;
  * dan kegagalan gateway bisa memperlambat/menggagalkan ingest yang sebenarnya
  * sudah sukses. Antrean memisahkan keduanya.
  *
- * Pesan dirakit lewat `toWara()`; `WaraChannel` membacanya. Nomor tujuan datang
- * dari `notify_phone` milik client (route anonymous `Notification::route('wara',
- * ...)`), bukan ditulis di kelas ini — supaya satu kelas notifikasi tidak
- * terikat pada satu nomor.
+ * Pesan dirakit lewat `toWara()`; `WaraChannel` membacanya. Tujuan datang dari
+ * daftar penerima aktif milik client (`srikandi_notify_recipients`, dikirim
+ * `NaskahNotifier` lewat route anonymous `Notification::route('wara', ...)`),
+ * bukan ditulis di kelas ini — supaya satu kelas notifikasi tidak terikat pada
+ * satu nomor.
  */
 class NaskahBaruDiterima extends Notification implements ShouldQueue
 {

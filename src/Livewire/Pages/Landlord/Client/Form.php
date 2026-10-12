@@ -3,6 +3,9 @@
 namespace Bale\Srikandi\Livewire\Pages\Landlord\Client;
 
 use Bale\Srikandi\Models\SrikandiClient;
+use Bale\Srikandi\Models\SrikandiNotifyRecipient;
+use Bale\Srikandi\Services\NotificationTester;
+use Bale\Srikandi\Support\BlindIndex;
 use Bale\Srikandi\Support\OtpPhone;
 use Bale\Wara\Models\WaraClient;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -18,7 +21,7 @@ use Livewire\Component;
  *
  * 🔴 KOLOM SECRET TIDAK PERNAH KEMBALI KE BROWSER.
  *
- * `username`, `password`, `totp_secret`, `gemini_api_key`, dan `notify_phone`
+ * `username`, `password`, `totp_secret`, `gemini_api_key`, dan `phone`
  * tidak pernah diisi ulang ke property publik, tidak pernah jadi nilai default
  * input, dan tidak pernah masuk `toArray()` model — `SrikandiClient` sudah
  * menaruhnya di `$hidden` sebagai lapis kedua. Yang dirender hanya "terisi" atau
@@ -30,7 +33,7 @@ use Livewire\Component;
  * `SrikandiClient::isUnchanged()` membedakan `''` ("jangan sentuh" — input
  * `type=password` di browser tidak pernah mengirim nilai lamanya, yang terkirim
  * adalah string kosong) dari `null` ("hapus"). Kalau hanya ada satu tombol
- * "ganti", maka `notify_phone` tidak akan PERNAH bisa dikosongkan: input kosong
+ * "ganti", maka `phone` tidak akan PERNAH bisa dikosongkan: input kosong
  * terkirim sebagai string kosong yang dibaca "admin tidak menyentuh field ini".
  * Karena itu tiap kolom secret punya "ganti nilai tersimpan" dan "hapus nilai
  * tersimpan", dan keduanya punya test sendiri.
@@ -50,7 +53,7 @@ use Livewire\Component;
  * milik wara. Alasannya bukan tampilan: kalau satu client tersimpan dengan awalan
  * lokal dan yang lain bentuk internasional, keduanya menghasilkan `phone_index`
  * yang sama tetapi ciphertext berbeda bentuknya — pencarian tetap jalan, tapi
- * kolom "nomor tujuan" akan menampilkan beberapa bentuk berbeda untuk nomor
+ * kolom "nomor akun" akan menampilkan beberapa bentuk berbeda untuk nomor
  * yang sama. Aturan normalisasi di daftar dan di form juga tidak boleh berbeda;
  * nomor yang cocok di satu tempat tapi tidak cocok di yang lain punya gejala
  * "pencarian selalu kosong".
@@ -96,9 +99,29 @@ class Form extends Component
 
     public string $notifyVia = 'none';
 
-    public string $notifyPhone = '';
-
     public ?string $notifyPurpose = null;
+
+    /**
+     * Penerima notifikasi (S5.2).
+     *
+     * 🔴 SATU BARIS = SATU PENERIMA, BUKAN SATU KOLOM.
+     *
+     * Baris hasil `id => null` adalah penerima BARU yang belum disimpan; baris
+     * `id => '<uuid>'` adalah penerima yang sudah ada. Nomor penerima lama
+     * SENGAJA tidak dimuat ke `value` (hanya `value_masked`), mengikuti prinsip
+     * "nilai tersimpan tidak pernah kembali ke browser". Nomor penerima baru
+     * ada di `value` karena admin baru saja mengetiknya.
+     *
+     * `value_index` (HMAC) dipakai untuk mencegah nomor ganda. Ia bukan rahasia
+     * yang berguna tanpa kunci index, dan tidak pernah dirender.
+     *
+     * @var array<int, array{id: string|null, label: string, is_active: bool, value: string, value_masked: string, value_index: string}>
+     */
+    public array $recipients = [];
+
+    public string $newRecipientPhone = '';
+
+    public string $newRecipientLabel = '';
 
     // --- Status ---
     public bool $isActive = true;
@@ -165,7 +188,6 @@ class Form extends Component
         $this->totpSecret = '';
         $this->geminiApiKey = '';
         $this->phone = '';
-        $this->notifyPhone = '';
 
         $this->totpDigits = (int) ($this->client->totp_digits ?? 6);
         $this->totpPeriod = (int) ($this->client->totp_period ?? 30);
@@ -178,6 +200,8 @@ class Form extends Component
 
         $this->isActive = $this->client->isActive();
 
+        $this->loadRecipients();
+
         // Yang tampil hanya "terisi / belum".
         $this->secretSet = [
             'username' => filled($this->client->username),
@@ -185,13 +209,58 @@ class Form extends Component
             'totpSecret' => filled($this->client->totp_secret),
             'geminiApiKey' => filled($this->client->gemini_api_key),
             'phone' => filled($this->client->phone),
-            'notifyPhone' => filled($this->client->notify_phone),
         ];
 
         $this->secretActions = array_fill_keys(array_keys($this->secretSet), [
             'replace' => false,
             'clear' => false,
         ]);
+    }
+
+    /**
+     * Muat penerima tersimpan ke state form.
+     *
+     * 🔴 NILAI PENERIMA LAMA TIDAK PERNAH DIKIRIM KE BROWSER.
+     *
+     * `value` sengaja dikosongkan; yang dirender hanya `value_masked`. Kalau
+     * `value` diisi di sini, seluruh daftar nomor penerima ikut tergantung di
+     * snapshot Livewire yang bisa dibaca dari DOM — persis yang dicegah di kolom
+     * secret lain.
+     */
+    protected function loadRecipients(): void
+    {
+        $this->recipients = $this->client
+            ?->notifyRecipients()
+            ->orderBy('created_at')
+            ->get()
+            ->map(fn (SrikandiNotifyRecipient $recipient): array => [
+                'id' => (string) $recipient->getKey(),
+                'label' => (string) $recipient->label,
+                'is_active' => (bool) $recipient->is_active,
+                'value' => '',
+                'value_masked' => $this->maskPhone((string) $recipient->value),
+                'value_index' => (string) $recipient->value_index,
+            ])
+            ->values()
+            ->all() ?? [];
+
+        $this->newRecipientPhone = '';
+        $this->newRecipientLabel = '';
+    }
+
+    /**
+     * Mask nomor supaya admin masih bisa mengenali baris tanpa melihat nomor
+     * penuh. Sisakan 4 digit terakhir.
+     */
+    protected function maskPhone(string $phone): string
+    {
+        if ($phone === '') {
+            return '—';
+        }
+
+        $visible = mb_substr($phone, -4);
+
+        return str_repeat('•', max(0, mb_strlen($phone) - 4)).$visible;
     }
 
     public function resetForm(): void
@@ -214,8 +283,11 @@ class Form extends Component
 
         $this->notifyEnabled = false;
         $this->notifyVia = 'none';
-        $this->notifyPhone = '';
         $this->notifyPurpose = null;
+
+        $this->recipients = [];
+        $this->newRecipientPhone = '';
+        $this->newRecipientLabel = '';
 
         $this->isActive = true;
 
@@ -337,7 +409,6 @@ class Form extends Component
             'totpSecret' => $this->client->totp_secret,
             'geminiApiKey' => $this->client->gemini_api_key,
             'phone' => $this->client->phone,
-            'notifyPhone' => $this->client->notify_phone,
             default => null,
         };
 
@@ -349,9 +420,9 @@ class Form extends Component
     }
 
     /**
-     * 🔴 Nomor tujuan dan nomor notifikasi dinormalisasi SEBELUM DISIMPAN.
+     * 🔴 Nomor akun (`phone`) dinormalisasi SEBELUM DISIMPAN.
      *
-     * @return array{phone: string|null, notifyPhone: string|null}
+     * @return array{phone: string|null}
      */
     protected function normalizedPhones(): array
     {
@@ -359,8 +430,92 @@ class Form extends Component
 
         return [
             'phone' => $normalizer->normalizeOrNull($this->phone),
-            'notifyPhone' => $normalizer->normalizeOrNull($this->notifyPhone),
         ];
+    }
+
+    /**
+     * Tambah penerima baru ke daftar (belum disimpan).
+     *
+     * 🔴 Nomor divalidasi DAN dinormalisasi di sini, bukan saat save.
+     *
+     * Kalau normalisasi ditunda sampai save, admin bisa menambah 5 baris lalu
+     * kehilangan semuanya karena 1 nomor salah. Menolak per baris di sini
+     * membuat kesalahannya kelihatan saat itu juga.
+     */
+    public function addRecipient(): void
+    {
+        $this->validate([
+            'newRecipientPhone' => ['required', 'string', 'max:32'],
+            'newRecipientLabel' => ['nullable', 'string', 'max:191'],
+        ], [], [
+            'newRecipientPhone' => __('nomor penerima'),
+            'newRecipientLabel' => __('label penerima'),
+        ]);
+
+        $normalizer = app(OtpPhone::class);
+        $normalized = $normalizer->normalizeOrNull($this->newRecipientPhone);
+
+        if ($normalized === null) {
+            $this->addError('newRecipientPhone', __('Nomor penerima tidak valid.'));
+
+            return;
+        }
+
+        if ($this->recipientValueExists($normalized)) {
+            $this->addError('newRecipientPhone', __('Nomor ini sudah ada di daftar penerima.'));
+
+            return;
+        }
+
+        $this->recipients[] = [
+            'id' => null,
+            'label' => trim($this->newRecipientLabel),
+            'is_active' => true,
+            'value' => $normalized,
+            'value_masked' => $this->maskPhone($normalized),
+            'value_index' => (new BlindIndex)->make($normalized),
+        ];
+
+        $this->newRecipientPhone = '';
+        $this->newRecipientLabel = '';
+        $this->resetValidation(['newRecipientPhone', 'newRecipientLabel']);
+    }
+
+    /**
+     * Hapus satu baris dari daftar.
+     *
+     * Baris tersimpan tidak dihapus dari database di sini — penghapusan nyata
+     * terjadi di `syncRecipients()` saat save, dengan cara "hapus semua id yang
+     * tidak lagi ada di daftar". Baris baru cukup hilang dari array.
+     */
+    public function removeRecipient(int $index): void
+    {
+        if (! array_key_exists($index, $this->recipients)) {
+            return;
+        }
+
+        unset($this->recipients[$index]);
+        $this->recipients = array_values($this->recipients);
+    }
+
+    /**
+     * Apakah nomor (ternormalisasi) sudah ada di daftar atau di database.
+     */
+    protected function recipientValueExists(string $normalized): bool
+    {
+        $index = (new BlindIndex)->make($normalized);
+
+        foreach ($this->recipients as $recipient) {
+            if (($recipient['value_index'] ?? null) === $index) {
+                return true;
+            }
+        }
+
+        if (! $this->client?->exists) {
+            return false;
+        }
+
+        return $this->client->notifyRecipients()->whereValue($normalized)->exists();
     }
 
     public function save(): void
@@ -401,9 +556,16 @@ class Form extends Component
             'phone' => ['nullable', 'string', 'max:32'],
             'notifyEnabled' => ['boolean'],
             'notifyVia' => ['required', 'in:none,whatsapp'],
-            'notifyPhone' => ['nullable', 'string', 'max:32'],
             'notifyPurpose' => ['nullable', 'string', 'max:32'],
             'isActive' => ['boolean'],
+
+            // Penerima divalidasi nilainya saat `addRecipient()`; di sini hanya
+            // batas kewajaran supaya satu form tidak menyimpan ratusan baris.
+            'recipients' => ['array', 'max:20'],
+            'recipients.*.id' => ['nullable', 'string'],
+            'recipients.*.label' => ['nullable', 'string', 'max:191'],
+            'recipients.*.is_active' => ['boolean'],
+            'recipients.*.value' => ['nullable', 'string', 'max:32'],
 
             'secretActions' => ['array'],
             'secretActions.*.replace' => ['boolean'],
@@ -448,13 +610,13 @@ class Form extends Component
 
         $credentials = $this->collectCredentials();
 
-        // 🔴 Nomor SELALU lewat `setCredentials()`.
+        // 🔴 Nomor OTP SELALU lewat `setCredentials()`.
         //
-        // `phone_index` dan `notify_phone_index` hanya dihitung ulang di
-        // `syncPhoneIndexes()`, yang dipanggil dari `setCredentials()`. Kalau
-        // `phone` diisi lewat `fill()` atau `forceFill()`, index-nya diam-diam
-        // menunjuk nilai lama — pencarian by-nomor mengembalikan client yang
-        // nomornya sudah diganti, tanpa error.
+        // `phone_index` hanya dihitung ulang di `syncPhoneIndexes()`, yang
+        // dipanggil dari `setCredentials()`. Kalau `phone` diisi lewat `fill()`
+        // atau `forceFill()`, index-nya diam-diam menunjuk nilai lama —
+        // pencarian by-nomor mengembalikan client yang nomornya sudah diganti,
+        // tanpa error.
         $this->applyPhonesToCredentials($credentials, $this->normalizedPhones());
 
         $client->setCredentials($credentials);
@@ -471,6 +633,12 @@ class Form extends Component
 
             return;
         }
+
+        // 🔴 SETELAH client tersimpan, baru penerima disinkronkan.
+        //
+        // Penerima butuh `client_id`, jadi client harus punya PK dulu. Kalau
+        // urutannya dibalik, baris penerima tersimpan tanpa induk.
+        $this->syncRecipients($client);
 
         $this->credentialsChanged = $client->hasCredentialChanges();
 
@@ -531,17 +699,17 @@ class Form extends Component
     }
 
     /**
-     * Nomor tujuan dan nomor notifikasi, menghormati aksi ganti/hapus.
+     * Nomor akun (`phone`), menghormati aksi ganti/hapus.
      *
      * Sama seperti kolom secret biasa: "hapus" → null, "ganti" → nilai
      * ternormalisasi yang baru, tanpa centang → string kosong (no-op).
      *
      * @param  array<string, mixed>  $credentials
-     * @param  array{phone: string|null, notifyPhone: string|null}  $phones
+     * @param  array{phone: string|null}  $phones
      */
     protected function applyPhonesToCredentials(array &$credentials, array $phones): void
     {
-        foreach (['phone' => 'phone', 'notifyPhone' => 'notify_phone'] as $property => $column) {
+        foreach (['phone' => 'phone'] as $property => $column) {
             $action = $this->credentialAction($property);
 
             if ($action === 'clear') {
@@ -558,6 +726,268 @@ class Form extends Component
 
             $credentials[$column] = '';
         }
+    }
+
+    /**
+     * Sinkronkan daftar penerima dengan database.
+     *
+     * 🔴 TIGA OPERASI DALAM SATU LEWATAN:
+     *   - baris dengan `id` → update `label` + `is_active` saja (nomor tidak
+     *     pernah dikirim balik ke browser, jadi tidak mungkin diubah di sini)
+     *   - baris tanpa `id`   → insert penerima baru
+     *   - baris tersimpan yang TIDAK ada lagi di daftar → delete
+     *
+     * Penghapusan dilakukan lewat `whereNotIn(id, keep)`, bukan per-id, supaya
+     * kalau ada baris yang gagal dimuat ia tidak diam-diam selamat. `whereNotIn`
+     * dengan daftar kosong berbahaya (`NOT IN ()`), jadi `keep` diselamatkan
+     * dengan sentinel id yang tidak akan pernah cocok.
+     */
+    protected function syncRecipients(SrikandiClient $client): void
+    {
+        $keepIds = [];
+        $normalizer = app(OtpPhone::class);
+
+        foreach ($this->recipients as $row) {
+            $id = $row['id'] ?? null;
+
+            if ($id !== null) {
+                $recipient = $client->notifyRecipients()->whereKey($id)->first();
+
+                if ($recipient === null) {
+                    continue;
+                }
+
+                $recipient->fill([
+                    'label' => ($row['label'] ?? '') !== '' ? $row['label'] : null,
+                    'is_active' => (bool) ($row['is_active'] ?? true),
+                ])->save();
+
+                $keepIds[] = $recipient->getKey();
+
+                continue;
+            }
+
+            $value = $normalizer->normalizeOrNull($row['value'] ?? '');
+
+            if ($value === null) {
+                continue;
+            }
+
+            // Nomor yang sudah tersimpan (di luar daftar) tidak digandakan.
+            if ($client->notifyRecipients()->whereValue($value)->exists()) {
+                continue;
+            }
+
+            $recipient = new SrikandiNotifyRecipient;
+            $recipient->forceFill(['client_id' => $client->getKey()]);
+            $recipient->fill([
+                'type' => SrikandiNotifyRecipient::TYPE_PHONE,
+                'label' => ($row['label'] ?? '') !== '' ? $row['label'] : null,
+                'is_active' => (bool) ($row['is_active'] ?? true),
+            ]);
+            $recipient->setValue($value);
+            $recipient->save();
+
+            $keepIds[] = $recipient->getKey();
+        }
+
+        $client->notifyRecipients()
+            ->whereNotIn('id', $keepIds === [] ? ['00000000-0000-0000-0000-000000000000'] : $keepIds)
+            ->delete();
+    }
+
+    /**
+     * Tombol uji: kirim notifikasi OTP gagal/kedaluwarsa (S5.1).
+     *
+     * 🔴 Tujuan SELALU Nomor Akun (`phone`), bukan daftar penerima naskah.
+     *
+     * Nomor yang dipakai adalah nomor EFEKTIF menurut isi form - termasuk
+     * nomor yang baru diketik tapi belum disimpan - supaya admin bisa menguji
+     * sebelum menyimpan. Client tetap harus sudah ada di database, karena
+     * pengiriman butuh device wara yang terhubung ke client ini.
+     */
+    public function testOtpNotification(): void
+    {
+        if (! $this->client?->exists) {
+            $this->dispatch('toast', message: __('Simpan client dulu sebelum mengirim uji coba.'), type: 'error');
+
+            return;
+        }
+
+        $phone = $this->effectiveAccountPhone();
+
+        if ($phone === null) {
+            $this->addError('phone', __('Nomor Akun belum diisi. Isi lalu simpan dulu.'));
+
+            return;
+        }
+
+        $result = app(NotificationTester::class)->sendOtp(
+            $this->client,
+            $phone,
+            $this->otpPurpose,
+            $this->resolvedWaraClient(),
+        );
+
+        $this->reportTestResult($result, __('nomor akun'));
+    }
+
+    /**
+     * Tombol uji: kirim notifikasi naskah baru (S5.2).
+     *
+     * 🔴 Tujuan SELALU daftar penerima aktif, TIDAK PERNAH Nomor Akun. Nomor
+     * akun punya peran lain (notifikasi OTP); mengirim naskah ke sana berarti
+     * memperlakukan nomor yang salah sebagai penerima.
+     */
+    public function testNaskahNotification(): void
+    {
+        if (! $this->client?->exists) {
+            $this->dispatch('toast', message: __('Simpan client dulu sebelum mengirim uji coba.'), type: 'error');
+
+            return;
+        }
+
+        $recipients = $this->effectiveActiveRecipients();
+
+        if ($recipients === []) {
+            $this->addError('newRecipientPhone', __('Belum ada penerima notifikasi aktif. Tambahkan penerima dulu.'));
+
+            return;
+        }
+
+        $result = app(NotificationTester::class)->sendNaskah(
+            $this->client,
+            $recipients,
+            $this->notifyPurpose,
+            $this->resolvedWaraClient(),
+        );
+
+        $this->reportTestResult($result, __('penerima naskah'));
+    }
+
+    /**
+     * Nomor Akun efektif menurut isi form.
+     *
+     * Menghormati aksi ganti/hapus yang sama dengan `save()`: "hapus" berarti
+     * tidak ada nomor, "ganti" memakai nilai yang baru diketik (dinormalisasi),
+     * tanpa centang berarti nilai tersimpan. Client baru (belum ada) selalu
+     * dianggap "ganti" oleh `credentialAction()`.
+     */
+    protected function effectiveAccountPhone(): ?string
+    {
+        $action = $this->credentialAction('phone');
+
+        if ($action === 'clear') {
+            return null;
+        }
+
+        if ($action === 'replace') {
+            return app(OtpPhone::class)->normalizeOrNull($this->phone);
+        }
+
+        $stored = $this->client?->phone;
+
+        return filled($stored) ? (string) $stored : null;
+    }
+
+    /**
+     * Penerima aktif efektif menurut isi form, ternormalisasi dan unik.
+     *
+     * Baris tersimpan membaca nomornya dari database (nomor lama tidak pernah
+     * kembali ke browser), baris baru memakai nilai yang baru diketik. Baris
+     * nonaktif dilewati, sama seperti `NaskahNotifier` di produksi.
+     *
+     * @return list<string>
+     */
+    protected function effectiveActiveRecipients(): array
+    {
+        $normalizer = app(OtpPhone::class);
+        $unique = [];
+
+        foreach ($this->recipients as $row) {
+            if (! ($row['is_active'] ?? true)) {
+                continue;
+            }
+
+            $id = $row['id'] ?? null;
+
+            if ($id !== null) {
+                $value = $this->client
+                    ?->notifyRecipients()
+                    ->whereKey($id)
+                    ->value('value');
+            } else {
+                $value = $normalizer->normalizeOrNull($row['value'] ?? '');
+            }
+
+            $value = filled($value) ? (string) $value : '';
+
+            if ($value !== '') {
+                $unique[$value] = true;
+            }
+        }
+
+        return array_keys($unique);
+    }
+
+    /**
+     * Client wara yang dipilih di form, untuk resolusi device tombol uji.
+     *
+     * `class_exists` supaya form tetap bisa dipakai di instalasi tanpa
+     * `bale/wara` terpasang penuh - sama seperti `loadWaraClients()`.
+     */
+    protected function resolvedWaraClient(): ?WaraClient
+    {
+        if (! class_exists(WaraClient::class) || blank($this->waraClientId)) {
+            return null;
+        }
+
+        return WaraClient::query()->find($this->waraClientId);
+    }
+
+    /**
+     * Laporkan hasil uji ke admin.
+     *
+     * Nomor ditampilkan TERSAMAR, mengikuti prinsip yang sama dengan daftar
+     * penerima: nomor penuh tidak pernah kembali ke browser, termasuk lewat
+     * toast.
+     *
+     * @param  array{ok: bool, sent: list<string>, failed: list<array{nomor: string, alasan: string}>}  $result
+     */
+    protected function reportTestResult(array $result, string $label): void
+    {
+        if ($result['ok']) {
+            $this->dispatch(
+                'toast',
+                message: __('Pesan uji terkirim ke :label (:jumlah tujuan).', [
+                    'label' => $label,
+                    'jumlah' => count($result['sent']),
+                ]),
+                type: 'success',
+            );
+
+            return;
+        }
+
+        if ($result['failed'] !== []) {
+            $reasons = collect($result['failed'])
+                ->map(fn (array $failure): string => sprintf(
+                    '%s: %s',
+                    $this->maskPhone($failure['nomor']),
+                    $failure['alasan'],
+                ))
+                ->implode('; ');
+
+            $this->dispatch(
+                'toast',
+                message: __('Gagal mengirim pesan uji - :reasons', ['reasons' => $reasons]),
+                type: 'error',
+            );
+
+            return;
+        }
+
+        $this->dispatch('toast', message: __('Tidak ada pesan uji yang terkirim.'), type: 'error');
     }
 
     public function render()

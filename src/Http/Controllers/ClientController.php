@@ -39,7 +39,7 @@ class ClientController extends SrikandiController
     /**
      * `GET /clients` — daftar client untuk tear-down dan pemilihan account.
      *
-     * 🔴 TIDAK memuat kredensial, TIDAK memuat nomor tujuan, TIDAK memuat index.
+     * 🔴 TIDAK memuat kredensial, TIDAK memuat nomor akun, TIDAK memuat index.
      *
      * Yang dikembalikan cukup untuk scraper memutuskan "akun mana yang mau
      * dijalankan": slug, nama, aktif atau tidak, dan apakah sudah siap (sudah
@@ -70,7 +70,7 @@ class ClientController extends SrikandiController
     /**
      * `GET /clients/{slug}/credentials` — kredensial login satu client.
      *
-     * 🔴 TIDAK memuat `phone`. Nomor tujuan itu urusan Bale: scraper tidak perlu
+     * 🔴 TIDAK memuat `phone`. Nomor akun itu urusan Bale: scraper tidak perlu
      * tahu ke mana OTP dikirim, dan memuatnya berarti kredensial yang
      * dikembalikan jadi lebih dari yang dibutuhkan.
      */

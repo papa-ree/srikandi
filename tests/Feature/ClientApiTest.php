@@ -65,7 +65,7 @@ describe('GET /clients', function () {
         expect($body['clients'])->toHaveCount(3)
             ->and(array_column($body['clients'], 'slug'))->toBe(['default', 'satker-a', 'satker-b']);
 
-        // 🔴 Ini assertion yang paling penting di endpoint ini: nomor tujuan dan
+        // 🔴 Ini assertion yang paling penting di endpoint ini: nomor akun dan
         // kredensial TIDAK BOLEH ikut. Scraper tidak perlu tahu ke mana OTP
         // dikirim, dan memuatnya berarti satu tempat lebih untuk bocor.
         $raw = json_encode($body);
@@ -144,7 +144,7 @@ describe('GET /clients/{slug}/credentials', function () {
             ->and($client['totp_period'])->toBe(30);
     });
 
-    it('TIDAK mengembalikan nomor tujuan', function () {
+    it('TIDAK mengembalikan nomor akun', function () {
         clientRow('satker-a', ['username' => 'u', 'password' => 'p', 'phone' => '628111111111']);
 
         $raw = $this->getJson(
@@ -152,7 +152,7 @@ describe('GET /clients/{slug}/credentials', function () {
             asScraper(scraperToken(['srikandi.client.credentials'])['plain'])
         )->getContent();
 
-        // Nomor tujuan itu urusan Bale. Mengembalikannya berarti kredensial yang
+        // Nomor akun itu urusan Bale. Mengembalikannya berarti kredensial yang
         // dilepas lebih banyak dari yang scraper butuhkan.
         expect($raw)->not->toContain('628111111111')
             ->and($raw)->not->toContain('phone');

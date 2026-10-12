@@ -33,7 +33,7 @@ use Illuminate\Support\Str;
  * terpisah untuk tiap akun, tapi di tabel Wara itu tetap dua baris berbeda --
  * dan hanya itu yang membuat filter OTP tidak saling menimpa.
  *
- * 🔴 ENKRIPSI: password, totp_secret, gemini_api_key, phone, notify_phone
+ * 🔴 ENKRIPSI: password, totp_secret, gemini_api_key, phone
  *
  * Kolom-kolom ini pakai cast `encrypted` Laravel, yang memakai AES-256-CBC
  * dengan kunci turunan APP_KEY. Konsekuensinya:
@@ -112,12 +112,18 @@ return new class extends Migration
             $table->string('gemini_fallback_model', 191)->nullable();
 
             /**
-             * Nomor TUJUAN OTP -- bukan nomor device.
+             * Nomor AKUN Srikandi -- bukan nomor device.
              *
              * Device pengirim ditentukan oleh `wara_routes`. Nomor ini adalah
-             * tempat kode OTP dikirim. Karena itu `phone` di sini BUKAN nomor
-             * WhatsApp yang dipakai login, dan wajib diisi manual: nomor tujuan
-             * sering berbeda dari device (mis. device kantor, tujuan HP pribadi).
+             * tempat kode OTP dari Srikandi diterima (penerima OTP), sekaligus
+             * tujuan notifikasi OTP gagal/kedaluwarsa (S5.1). Karena itu `phone`
+             * di sini BUKAN nomor WhatsApp yang dipakai login, dan wajib diisi
+             * manual: nomor akun sering berbeda dari device (mis. device kantor,
+             * akun HP pribadi).
+             *
+             * 🔴 BUKAN tujuan notifikasi NASKAH BARU -- itu tabel
+             * `srikandi_notify_recipients`. Notifikasi OTP tidak pernah dikirim
+             * ke sana, dan notifikasi naskah baru tidak pernah dikirim ke `phone`.
              *
              * UI menyediakan tombol "isi dari device" untuk mengurangi salah ketik,
              * tapi hasilnya tetap bisa diubah manual.
@@ -135,10 +141,13 @@ return new class extends Migration
             // Notifikasi. Fase pertama WhatsApp saja; `email` sengaja TIDAK ada
             // di enum karena `mail.default = log` di semua env saat ini --
             // artinya "email" berarti nulis ke log, bukan kirim ke inbox.
+            //
+            // 🔴 Daftar PENERIMA ada di tabel `srikandi_notify_recipients`,
+            // bukan kolom di sini. Satu client boleh punya beberapa penerima,
+            // dan tiap baris bisa punya label + status aktif sendiri. Kolom
+            // tunggal `notify_phone` sudah dihapus (S5.2).
             $table->boolean('notify_enabled')->default(false);
             $table->enum('notify_via', ['none', 'whatsapp'])->default('none');
-            $table->text('notify_phone')->nullable();
-            $table->string('notify_phone_index', 64)->nullable()->index();
             $table->string('notify_purpose', 32)->nullable();
 
             /**
