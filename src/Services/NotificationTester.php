@@ -73,7 +73,19 @@ class NotificationTester
         ?WaraClient $waraClient,
         int $jumlah = 1,
     ): array {
-        $message = (new NaskahBaruDiterima($client->nama, $jumlah))->toWara();
+        // Baris contoh, supaya tombol uji menampilkan format baris-bawah yang
+        // sama dengan produksi. `--contoh--` sengaja dipakai supaya teksnya
+        // jelas "ini pesan percobaan, bukan naskah sungguhan".
+        $naskah = [
+            [
+                'nomor' => '--contoh--',
+                'hal' => 'Contoh Naskah Baru',
+                'pengirim' => 'Contoh Pengirim',
+                'tanggal' => now()->toDateString(),
+            ],
+        ];
+
+        $message = (new NaskahBaruDiterima($client->nama, $jumlah, $naskah))->toWara();
 
         return $this->send($recipients, $message, $purpose, $waraClient);
     }

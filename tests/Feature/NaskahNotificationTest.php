@@ -124,13 +124,15 @@ describe('Notifikasi naskah baru (S5.2)', function () {
         // Fase 1: terakumulasi, baseline dicatat, TIDAK ada kirim.
         $client->refresh();
         expect($client->notify_baseline_at)->not->toBeNull()
-            ->and($client->notify_pending_count)->toBe(2);
+            ->and($client->notify_pending_count)->toBe(2)
+            ->and($client->notify_pending_naskah)->toHaveCount(2);
         Notification::assertNothingSent();
 
-        // Fase 2 (flush): diredam, tapi counter tetap di-reset.
+        // Fase 2 (flush): diredam, tapi counter DAN detail naskah di-reset.
         akhiriSiklus();
         $client->refresh();
-        expect($client->notify_pending_count)->toBe(0);
+        expect($client->notify_pending_count)->toBe(0)
+            ->and($client->notify_pending_naskah)->toBe([]);
         Notification::assertNothingSent();
     });
 
@@ -191,17 +193,66 @@ describe('Notifikasi naskah baru (S5.2)', function () {
 
         // Belum ada kirim selama siklus berjalan.
         Notification::assertNothingSent();
-        expect($client->refresh()->notify_pending_count)->toBe(10);
+        expect($client->refresh()->notify_pending_count)->toBe(10)
+            ->and($client->refresh()->notify_pending_naskah)->toHaveCount(10);
 
-        // Flush: satu pesan, jumlah = 10.
+        // Flush: satu pesan, jumlah = 10, detail tiap naskah ikut di pesan.
         akhiriSiklus();
         Notification::assertSentTimes(NaskahBaruDiterima::class, 1);
         Notification::assertSentTo(
             Notification::route('wara', '628000000001'),
             NaskahBaruDiterima::class,
             function ($notification) {
+                $pesan = $notification->toWara(null);
+
                 return $notification->jumlah === 10
-                    && str_contains($notification->toWara(null), '10 naskah baru belum dibaca');
+                    && str_contains($pesan, '10 naskah baru belum dibaca')
+                    && count($notification->naskah) === 10
+                    && str_contains($pesan, "1. Undangan\n   Pengirim: Sekretariat\n   Tanggal: 01 Oct 2026");
+            }
+        );
+    });
+
+    it('menampilkan hal, pengirim, dan tanggal tiap naskah sebagai baris kebawah', function () {
+        Notification::fake();
+        Config::set('srikandi.notify.baseline_grace_minutes', 0);
+
+        srikandiNotifyClient(['notify_baseline_at' => now()->subHour()]);
+
+        kirimNaskah([
+            naskahItemNotify([
+                'nomor' => '800/UA.2026/701',
+                'hal' => 'Undangan Rapat',
+                'nama_pengirim' => 'Sekretariat',
+                'tanggal' => '2026-10-01',
+            ]),
+            naskahItemNotify([
+                'nomor' => '800/UA.2026/702',
+                'hal' => 'Permohonan Data',
+                'nama_pengirim' => 'Bagian Umum',
+                'tanggal' => '2026-10-02',
+            ]),
+            // Nilai yang tidak terbaca di payload → placeholder, baris tetap ada.
+            naskahItemNotify([
+                'nomor' => '800/UA.2026/703',
+                'hal' => null,
+                'nama_pengirim' => null,
+                'tanggal' => null,
+            ]),
+        ])->assertJsonPath('inserted', 3);
+        akhiriSiklus();
+
+        Notification::assertSentTo(
+            Notification::route('wara', '628000000001'),
+            NaskahBaruDiterima::class,
+            function ($notification) {
+                $pesan = $notification->toWara(null);
+
+                return $notification->jumlah === 3
+                    && str_contains($pesan, '3 naskah baru belum dibaca')
+                    && str_contains($pesan, "1. Undangan Rapat\n   Pengirim: Sekretariat\n   Tanggal: 01 Oct 2026")
+                    && str_contains($pesan, "2. Permohonan Data\n   Pengirim: Bagian Umum\n   Tanggal: 02 Oct 2026")
+                    && str_contains($pesan, "3. (tanpa hal)\n   Pengirim: (tanpa pengirim)\n   Tanggal: (tanpa tanggal)");
             }
         );
     });

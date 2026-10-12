@@ -79,6 +79,7 @@ use Spatie\Activitylog\Support\LogOptions;
  * @property string|null $notify_purpose
  * @property Carbon|null $notify_baseline_at
  * @property int $notify_pending_count
+ * @property list<array{nomor: string, hal: string|null, pengirim: string|null, tanggal: string|null}> $notify_pending_naskah
  * @property bool $is_active
  * @property Carbon|null $credentials_rotated_at
  * @property Carbon|null $last_login_at
@@ -115,6 +116,7 @@ class SrikandiClient extends Model
         'notify_enabled',
         'notify_via',
         'notify_purpose',
+        'notify_pending_naskah',
         'is_active',
     ];
 
@@ -189,6 +191,7 @@ class SrikandiClient extends Model
         'last_naskah_at' => 'datetime',
         'last_error_at' => 'datetime',
         'notify_baseline_at' => 'datetime',
+        'notify_pending_naskah' => 'array',
     ];
 
     /**

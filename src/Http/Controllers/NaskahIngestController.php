@@ -113,12 +113,17 @@ class NaskahIngestController extends SrikandiController
         // sukses — kalau tidak, scraper akan mengulang seluruh harvest dan
         // mencoba menyingkirkan naskah yang sebenarnya sudah tersimpan.
         //
-        // Di sini naskah baru hanya DITAMBAHKAN ke `notify_pending_count`.
+        // Di sini naskah baru hanya DITAMBAHKAN ke `notify_pending_count`
+        // (plus detailnya di `notify_pending_naskah`, untuk pesan WhatsApp).
         // Pesannya baru dikirim saat `heartbeat` (akhir siklus) lewat
         // `NaskahNotifier::tutupSiklus()`, supaya satu harvest yang dipecah jadi
         // beberapa POST tetap menghasilkan satu notifikasi.
         try {
-            $this->notifier->naskahMasuk($validated['sumber'], $counts['inserted']);
+            $this->notifier->naskahMasuk(
+                $validated['sumber'],
+                $counts['inserted'],
+                $counts['inserted_items'],
+            );
         } catch (\Throwable $e) {
             Log::warning('Gagal mengakumulasi notifikasi naskah baru.', [
                 'sumber' => $validated['sumber'],

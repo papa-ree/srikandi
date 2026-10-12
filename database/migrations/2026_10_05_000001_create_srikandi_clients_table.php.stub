@@ -172,6 +172,13 @@ return new class extends Migration
              */
             $table->unsignedInteger('notify_pending_count')->default(0);
 
+            /**
+             * Detail naskah yang menunggu notifikasi (S5.2).
+             * Menyimpan baris compact (nomor, hal, pengirim, tanggal) untuk
+             * pesan WhatsApp berformat baris-bawah.
+             */
+            $table->json('notify_pending_naskah')->nullable();
+
             $table->boolean('is_active')->default(true);
 
             /**

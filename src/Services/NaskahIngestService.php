@@ -23,13 +23,19 @@ class NaskahIngestService
     /**
      * @param  iterable<array<string, mixed>>  $items  isi `data[]` dari Srikandi
      * @param  string  $sumber  slug client Srikandi yang mengirim payload ini
-     * @return array{inserted: int, revised: int, unchanged: int, skipped: int}
+     * @return array{inserted: int, revised: int, unchanged: int, skipped: int, inserted_items: list<array{nomor: string, hal: string|null, pengirim: string|null, tanggal: string|null}>}
      *
      * @throws SrikandiException
      */
     public function ingest(iterable $items, string $sumber): array
     {
-        $counts = ['inserted' => 0, 'revised' => 0, 'unchanged' => 0, 'skipped' => 0];
+        $counts = [
+            'inserted' => 0,
+            'revised' => 0,
+            'unchanged' => 0,
+            'skipped' => 0,
+            'inserted_items' => [],
+        ];
 
         foreach ($items as $item) {
             if (! is_array($item)) {
@@ -48,10 +54,36 @@ class NaskahIngestService
 
             $outcome = DB::transaction(fn () => $this->persist($row + ['sumber' => $sumber]));
 
+            if ($outcome === 'inserted') {
+                $counts['inserted_items'][] = $this->notifyItem($row);
+            }
+
             $counts[$outcome]++;
         }
 
         return $counts;
+    }
+
+    /**
+     * Baris compact untuk notifikasi naskah baru (S5.2).
+     *
+     * HANYA kolom yang perlu ditampilkan di pesan WhatsApp, disalin dari hasil
+     * {@see mapItem()} — TIDAK termasuk `snapshot` (payload mentah Srikandi
+     * bisa besar dan tidak relevan untuk ditampilkan). Disalin di pintu masuk,
+     * jadi isinya tidak berubah kalau baris `srikandi_naskah` direvisi
+     * belakangan di siklus yang sama.
+     *
+     * @param  array<string, mixed>  $row
+     * @return array{nomor: string, hal: string|null, pengirim: string|null, tanggal: string|null}
+     */
+    protected function notifyItem(array $row): array
+    {
+        return [
+            'nomor' => $row['nomor_naskah'],
+            'hal' => $row['hal'],
+            'pengirim' => $row['pengirim'],
+            'tanggal' => $row['tanggal_naskah'],
+        ];
     }
 
     /**

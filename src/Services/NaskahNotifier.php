@@ -4,6 +4,7 @@ namespace Bale\Srikandi\Services;
 
 use Bale\Srikandi\Models\SrikandiClient;
 use Bale\Srikandi\Notifications\NaskahBaruDiterima;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Notification;
 
 /**
@@ -20,7 +21,8 @@ use Illuminate\Support\Facades\Notification;
  *
  * - `naskahMasuk()` dipanggil setelah tiap `naskah-dinas` (bisa beberapa kali
  *   dalam satu siklus karena batas 500 item per payload). Ia hanya MENAMBAH
- *   `inserted` ke `notify_pending_count` — tidak pernah mengirim sendiri.
+ *   `inserted` ke `notify_pending_count` dan detail tiap naskah baru ke
+ *   `notify_pending_naskah` — tidak pernah mengirim sendiri.
  * - `tutupSiklus()` dipanggil di `heartbeat`, yang menurut KONTRAK §3.4/§8
  *   datang PERSIS SEKALI per siklus (setelah `runOnce()`, sukses maupun gagal).
  *   Ia mengirim SATU pesan dengan jumlah total akumulasi, lalu me-reset
@@ -44,35 +46,57 @@ class NaskahNotifier
      * Fase 1 — akumulasi. Panggil tepat setelah `NaskahIngestService::ingest()`.
      *
      * Mencatat baseline kalau belum ada (siklus pertama yang benar-benar
-     * memasukkan naskah), lalu menambahkan `inserted` ke `notify_pending_count`.
+     * memasukkan naskah), lalu menambahkan `inserted` ke `notify_pending_count`
+     * dan detail tiap naskah baru ke `notify_pending_naskah`.
+     *
+     * 🔴 PENULISAN COUNT + DETAIL ATOMIK dalam SATU transaksi yang sama.
+     *
+     * Counters lama memakai `increment()` yang aman terhadap dua POST paralel.
+     * Kolom detail (`notify_pending_naskah`) adalah JSON dan tidak bisa
+     * `increment` — read-modify-write biasa akan kehilangan baris kalau dua
+     * POST datang bersamaan. Lock `FOR UPDATE` (no-op di SQLite, aktif di
+     * MySQL) membuat keduanya konsisten: count dan daftar naskah selalu
+     * bertambah dari versi yang sama.
+     *
+     * @param  list<array{nomor: string, hal: string|null, pengirim: string|null, tanggal: string|null}>  $rows
      */
-    public function naskahMasuk(string $sumber, int $inserted): void
+    public function naskahMasuk(string $sumber, int $inserted, array $rows = []): void
     {
-        $client = SrikandiClient::query()->where('slug', $sumber)->first();
-
-        if ($client === null) {
-            return;
-        }
-
         if ($inserted <= 0) {
             return;
         }
 
-        if ($client->notify_baseline_at === null) {
-            $client->forceFill(['notify_baseline_at' => now()])->save();
-        }
+        DB::transaction(function () use ($sumber, $inserted, $rows): void {
+            $client = SrikandiClient::query()
+                ->where('slug', $sumber)
+                ->lockForUpdate()
+                ->first();
 
-        // `increment` menulis `col = col + inserted` di database — aman
-        // terhadap read-modify-write kalau nanti ada dua POST paralel.
-        $client->increment('notify_pending_count', $inserted);
+            if ($client === null) {
+                return;
+            }
+
+            if ($client->notify_baseline_at === null) {
+                $client->forceFill(['notify_baseline_at' => now()])->save();
+            }
+
+            $client->forceFill([
+                'notify_pending_count' => $client->notify_pending_count + $inserted,
+                'notify_pending_naskah' => [
+                    ...(array) $client->notify_pending_naskah,
+                    ...$rows,
+                ],
+            ])->save();
+        });
     }
 
     /**
      * Fase 2 — flush di akhir siklus. Panggil dari `ClientController::heartbeat()`.
      *
      * Mengirim SATU notifikasi untuk semua naskah yang terakumulasi sejak flush
-     * terakhir, lalu me-reset counter. Counter di-reset meskipun pengiriman
-     * dibatalkan (redam baseline, gerbang mati): ini siklus, bukan request.
+     * terakhir, lalu me-reset counter DAN detail naskahnya. Keduanya di-reset
+     * meskipun pengiriman dibatalkan (redam baseline, gerbang mati): ini
+     * siklus, bukan request.
      */
     public function tutupSiklus(string $sumber): void
     {
@@ -83,15 +107,25 @@ class NaskahNotifier
         }
 
         $pending = (int) $client->notify_pending_count;
+        $naskah = (array) $client->notify_pending_naskah;
 
-        if ($pending <= 0) {
+        if ($pending <= 0 && $naskah === []) {
             return;
         }
 
         // Reset SELALU sebelum kirim: kalau `Notification::route(...)->notify()`
         // melempar (misal antrean mati), counter sudah nol jadi siklus ini tidak
-        // akan terkirim/terkirim ulang di siklus berikutnya.
-        $client->forceFill(['notify_pending_count' => 0])->save();
+        // akan terkirim/terkirim ulang di siklus berikutnya. Detail naskah ikut
+        // di-reset supaya `notify_pending_count` dan `notify_pending_naskah`
+        // tidak pernah menyimpang.
+        $client->forceFill([
+            'notify_pending_count' => 0,
+            'notify_pending_naskah' => [],
+        ])->save();
+
+        if ($pending <= 0) {
+            return;
+        }
 
         if ($this->redamBaseline($client)) {
             return;
@@ -101,7 +135,7 @@ class NaskahNotifier
             return;
         }
 
-        $this->kirimKePenerima($client, $pending);
+        $this->kirimKePenerima($client, $pending, $naskah);
     }
 
     /**
@@ -122,7 +156,7 @@ class NaskahNotifier
      * mengirim apa pun. Diam di sini lebih benar daripada mengirim nomor OTP ke
      * tempat yang tidak diminta admin.
      */
-    private function kirimKePenerima(SrikandiClient $client, int $pending): void
+    private function kirimKePenerima(SrikandiClient $client, int $pending, array $naskah = []): void
     {
         $recipients = $client->notifyRecipients()
             ->where('is_active', true)
@@ -132,7 +166,7 @@ class NaskahNotifier
             return;
         }
 
-        $notification = new NaskahBaruDiterima($client->nama, $pending);
+        $notification = new NaskahBaruDiterima($client->nama, $pending, $naskah);
         $sudahDikirim = [];
 
         foreach ($recipients as $recipient) {
