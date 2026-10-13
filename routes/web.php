@@ -4,6 +4,7 @@ use Bale\Srikandi\Livewire\Pages\Landlord\Client\Form as ClientForm;
 use Bale\Srikandi\Livewire\Pages\Landlord\Client\Index as ClientIndex;
 use Bale\Srikandi\Livewire\Pages\Landlord\Naskah\Detail as NaskahDetail;
 use Bale\Srikandi\Livewire\Pages\Landlord\Naskah\Index as NaskahIndex;
+use Bale\Srikandi\Livewire\Pages\Landlord\Overview\Index as OverviewIndex;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -30,6 +31,17 @@ use Illuminate\Support\Facades\Route;
 */
 
 Route::middleware(['web', 'auth'])->prefix('srikandi')->name('srikandi.')->group(function () {
+    /*
+     * 🔴 Overview dijaga `srikandi.client.read`, sama seperti daftar client.
+     *
+     * Halaman ini pintu masuk grup Srikandi: ia menampilkan kesehatan akun
+     * lebih dulu, baru statistik naskah. Operator yang mengelola akun tanpa
+     * akses arsip naskah tetap harus bisa membukanya.
+     */
+    Route::get('/overview', OverviewIndex::class)
+        ->name('overview')
+        ->middleware('can:srikandi.client.read');
+
     Route::get('/client', ClientIndex::class)
         ->name('client.index')
         ->middleware('can:srikandi.client.read');

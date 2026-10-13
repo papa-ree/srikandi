@@ -2,6 +2,7 @@
 
 use Bale\Srikandi\Http\Controllers\ClientController;
 use Bale\Srikandi\Http\Controllers\NaskahIngestController;
+use Bale\Srikandi\Http\Controllers\NaskahKeluarIngestController;
 use Bale\Srikandi\Http\Controllers\OtpPendingController;
 use Bale\Srikandi\Http\Controllers\OtpRequestController;
 use Bale\Srikandi\Http\Controllers\OtpVerifyController;
@@ -39,6 +40,13 @@ Route::middleware('bale.api')->prefix('api/v1/srikandi')->name('api.v1.srikandi.
     Route::post('naskah-dinas', NaskahIngestController::class)
         ->middleware('scope:srikandi.naskah.write')
         ->name('naskah-dinas');
+
+    // 🔴 Scope tetap `srikandi.naskah.write`. Token yang boleh menulis Naskah
+    // Masuk sudah boleh menulis Naskah Keluar -- menambah scope baru berarti
+    // satu permission lagi yang harus diberikan ke tiap token scraper.
+    Route::post('naskah-dinas-keluar', NaskahKeluarIngestController::class)
+        ->middleware('scope:srikandi.naskah.write')
+        ->name('naskah-dinas-keluar');
 
     /*
      * ------------------------------------------------------------------

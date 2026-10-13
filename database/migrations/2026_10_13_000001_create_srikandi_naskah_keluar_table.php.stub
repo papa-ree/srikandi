@@ -1,0 +1,117 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+/**
+ * Cache item Naskah Keluar dari scraper (PRD §4.1c).
+ *
+ * TABEL TERPISAH dari `srikandi_naskah`, dan itu keputusan yang disengaja.
+ *
+ * Di sampel discovery (`naskah-keluar-sample-01.json`) baris Naskah Keluar
+ * TIDAK punya `status_baca`/`status_tindak`/`status_berkas` di level baris --
+ * yang ada `status` ("TRANSAKSI") dan `status_send` (objek dengan `status`
+ * "KIRIM"/"BELUM"). Kalau keduanya dipaksa satu tabel dengan kolom `jenis`,
+ * setengah kolom selalu NULL dan status di kolom yang sama berarti dua hal
+ * berbeda tergantung barisnya. Tabel terpisah membuat tiap bentuk punya kolom
+ * yang jujur.
+ *
+ * IKUT POLA `srikandi_naskah`, tanpa pengecualian:
+ *
+ *   - Penentu pemilik adalah `sumber` `string(64)` = `srikandi_clients.slug`,
+ *     TANPA foreign key -- BUKAN `account_id`. `account_id`/`bale_id` sudah
+ *     dihapus dari `srikandi_naskah` sebagai keputusan yang salah (lihat
+ *     docblock migrasinya): tidak ada tabel `accounts`, tidak ada FK, dan
+ *     angka itu tidak pernah berarti apa-apa.
+ *   - `sumber` NOT NULL tanpa default. Default berarti baris yang gagal
+ *     menentukan pemiliknya tersimpan seolah-olah milik client `default` --
+ *     kesalahan yang tidak akan muncul di mana pun karena yang tersimpan
+ *     terlihat valid.
+ *   - `tahun` NOT NULL default 0, diambil dari `tanggal` (`NaskahYear`), bukan
+ *     dari nomor. NULL menggagalkan dedup di MySQL secara diam-diam.
+ *   - `row_hash` menyimpan hash milik Srikandi apa adanya (prefix `md5:`),
+ *     supaya keputusan `inserted` vs `revised` berasal dari bukti sumber data,
+ *     bukan tebakan backend.
+ *   - `hash_value` menyimpan MD5 mentah dari Srikandi untuk audit.
+ *   - `first_seen_at`/`last_seen_at` supaya naskah yang hilang dari list bisa
+ *     terdeteksi.
+ *
+ * `snapshot` menyimpan payload mentah baris. Kolom `jenis` TIDAK ada -- pemisahan
+ * tabel, bukan penanda baris.
+ *
+ * Primary key UUID, konsisten dengan `srikandi_naskah`, `bale_lists`,
+ * `bale_users`, `api_tokens`, `wara_clients`, dan `srikandi_otp_states`.
+ */
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::create('srikandi_naskah_keluar', function (Blueprint $table) {
+            $table->uuid('id')->primary();
+
+            // Slug client pemilik naskah. NOT NULL tanpa default -- lihat catatan
+            // panjang di docblock migrasi.
+            $table->string('sumber', 64);
+
+            $table->string('nomor_naskah', 191);
+            $table->unsignedSmallInteger('tahun')->default(0);
+            $table->date('tanggal_naskah')->nullable();
+
+            $table->text('hal')->nullable();
+            $table->text('ringkasan')->nullable();
+
+            // Padanan `pengirim` di Naskah Masuk. Nullable: sampel discovery
+            // tidak punya field tujuan eksplisit.
+            $table->string('tujuan_naskah', 191)->nullable();
+
+            /*
+             * Status Naskah Keluar berbeda dari Naskah Masuk. Di sampel yang ada
+             * hanya `status` ("TRANSAKSI") dan `status_send.status`
+             * ("KIRIM"/"BELUM"); `status_baca`/`status_berkas` tidak muncul --
+             * keduanya tetap ada supaya kontrak API (rak PRD §6.3) terpenuhi dan
+             * tidak perlu migrasi lagi kalau scraper mulai mengisinya.
+             *
+             * `status_berkas` disimpan mentah, termasuk NULL.
+             */
+            $table->string('status_tindak_lanjut', 50)->nullable();
+            $table->string('status_baca', 50)->nullable();
+            $table->string('status_berkas', 50)->nullable();
+
+            // Urutan tampilan Srikandi. BUKAN identitas -- nomor urut bisa
+            // berubah/di-reuse, jadi tidak pernah dipakai untuk dedup.
+            $table->unsignedSmallInteger('no_urut')->nullable();
+
+            // Prefix relatif (`naskah-dinas-keluar/<org>/<ym>`), BUKAN URL.
+            $table->string('file_path', 255)->nullable();
+            $table->string('file_name_original', 255)->nullable();
+
+            // Hash Srikandi apa adanya (`md5:`) untuk keputusan inserted/revised,
+            // dan MD5 mentahnya untuk audit.
+            $table->string('row_hash', 64)->nullable();
+            $table->string('hash_value', 64)->nullable();
+
+            $table->json('snapshot')->nullable();
+
+            $table->timestamp('first_seen_at');
+            $table->timestamp('last_seen_at');
+
+            $table->timestamps();
+
+            // `sumber` kolom PERTAMA: dua akun Srikandi dengan nomor sama harus
+            // bisa coexist. Tanpa itu yang kedua jadi `unchanged` dan akun
+            // pertama diam-diam kehilangan riwayat naskahnya.
+            $table->unique(['sumber', 'nomor_naskah', 'tahun']);
+
+            // Filter daftar UI: satu client, satu tahun, urutan terbaru.
+            $table->index(['sumber', 'tahun', 'last_seen_at']);
+            $table->index(['sumber', 'tanggal_naskah']);
+            $table->index('last_seen_at');
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('srikandi_naskah_keluar');
+    }
+};

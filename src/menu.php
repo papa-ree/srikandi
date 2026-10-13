@@ -10,6 +10,12 @@ return [
             'icon' => 'clipboard',
             'items' => [
                 [
+                    'label' => 'Overview',
+                    'url' => 'srikandi/overview',
+                    'icon' => 'bar-chart-3',
+                    'permission' => 'srikandi.client.read',
+                ],
+                [
                     'label' => 'Client',
                     'url' => 'srikandi/client',
                     'icon' => 'users',

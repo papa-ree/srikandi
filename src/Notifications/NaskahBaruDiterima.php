@@ -53,7 +53,8 @@ class NaskahBaruDiterima extends Notification implements ShouldQueue
         public string $namaClient,
         public int $jumlah,
         public array $naskah = [],
-    ) {}
+    ) {
+    }
 
     /**
      * @return array<int, string>
@@ -95,10 +96,10 @@ class NaskahBaruDiterima extends Notification implements ShouldQueue
         }
 
         if ($baris !== []) {
-            $out .= "\n\n".implode("\n", $baris);
+            $out .= "\n\n" . implode("\n", $baris);
         }
 
-        return $out."\n\nBuka Bale untuk menindaklanjuti.";
+        return $out . "\n\nBuka Aplikasi Srikandi untuk menindaklanjuti.";
     }
 
     /**
@@ -119,7 +120,7 @@ class NaskahBaruDiterima extends Notification implements ShouldQueue
      */
     protected function formatTanggal(mixed $tanggal): ?string
     {
-        if (! is_string($tanggal) || trim($tanggal) === '') {
+        if (!is_string($tanggal) || trim($tanggal) === '') {
             return null;
         }
 
