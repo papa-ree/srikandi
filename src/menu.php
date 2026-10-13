@@ -27,6 +27,12 @@ return [
                     'icon' => 'file-text',
                     'permission' => 'srikandi.naskah.read',
                 ],
+                [
+                    'label' => 'Naskah Keluar',
+                    'url' => 'srikandi/naskah-keluar',
+                    'icon' => 'send',
+                    'permission' => 'srikandi.naskah.keluar.read',
+                ],
             ],
         ],
     ],

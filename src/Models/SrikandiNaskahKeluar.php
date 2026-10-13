@@ -123,4 +123,20 @@ class SrikandiNaskahKeluar extends Model
         return $this->last_seen_at !== null
             && $this->last_seen_at->lt(now()->subMinutes($thresholdMinutes)->startOfSecond());
     }
+
+    /**
+     * Naskah keluar ini punya berkas (lampiran) atau tidak.
+     *
+     * 🔴 Berbasis `file_path`/`file_name_original`, BUKAN `status_berkas`.
+     *
+     * Bentuk Naskah Keluar tidak punya status berkas di level baris (PRD
+     * §4.1c); yang menandakan ada lampiran adalah `file_path` relatif dari
+     * Srikandi. `status_berkas` tetap disimpan mentah untuk audit, tapi
+     * nilainya hampir selalu NULL dan tidak boleh dipakai memutuskan badge.
+     */
+    public function hasBerkas(): bool
+    {
+        return trim((string) $this->file_path) !== ''
+            || trim((string) $this->file_name_original) !== '';
+    }
 }

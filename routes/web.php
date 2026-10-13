@@ -4,6 +4,8 @@ use Bale\Srikandi\Livewire\Pages\Landlord\Client\Form as ClientForm;
 use Bale\Srikandi\Livewire\Pages\Landlord\Client\Index as ClientIndex;
 use Bale\Srikandi\Livewire\Pages\Landlord\Naskah\Detail as NaskahDetail;
 use Bale\Srikandi\Livewire\Pages\Landlord\Naskah\Index as NaskahIndex;
+use Bale\Srikandi\Livewire\Pages\Landlord\NaskahKeluar\Detail as NaskahKeluarDetail;
+use Bale\Srikandi\Livewire\Pages\Landlord\NaskahKeluar\Index as NaskahKeluarIndex;
 use Bale\Srikandi\Livewire\Pages\Landlord\Overview\Index as OverviewIndex;
 use Illuminate\Support\Facades\Route;
 
@@ -69,4 +71,20 @@ Route::middleware(['web', 'auth'])->prefix('srikandi')->name('srikandi.')->group
     Route::get('/naskah/{naskah}', NaskahDetail::class)
         ->name('naskah.show')
         ->middleware('can:srikandi.naskah.read');
+
+    /*
+     * 🔴 Naskah Keluar adalah HALAMAN dan TABEL terpisah dari Naskah Masuk,
+     * dengan permission sendiri (`srikandi.naskah.keluar.read`).
+     *
+     * Sama seperti Naskah Masuk: tidak ada route form, hanya dua route baca.
+     * `srikandi_naskah_keluar` menyimpan salinan dokumen milik Srikandi, jadi
+     * Bale tidak boleh mengubah atau menghapusnya.
+     */
+    Route::get('/naskah-keluar', NaskahKeluarIndex::class)
+        ->name('naskah-keluar.index')
+        ->middleware('can:srikandi.naskah.keluar.read');
+
+    Route::get('/naskah-keluar/{naskahKeluar}', NaskahKeluarDetail::class)
+        ->name('naskah-keluar.show')
+        ->middleware('can:srikandi.naskah.keluar.read');
 });

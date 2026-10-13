@@ -208,6 +208,13 @@ class InstallCommand extends Command
             // `Form.php`, tidak punya `item-actions`, dan tidak punya
             // `deleteEvent` (PRD §6.1).
             'srikandi.naskah.read' => 'Melihat daftar dan detail naskah dinas yang ter-cache. Read-only.',
+            // 🔴 Permission terpisah dari `srikandi.naskah.read`.
+            //
+            // Naskah Keluar adalah tabel dan halaman yang berbeda; operator yang
+            // boleh melihat arsip Naskah Masuk belum tentu boleh melihat Naskah
+            // Keluar. Keduanya read-only, tapi pemisahan tetap dipertahankan
+            // supaya aksesnya bisa diberikan per-jenis tanpa mengubah kode.
+            'srikandi.naskah.keluar.read' => 'Melihat daftar dan detail naskah keluar yang ter-cache. Read-only.',
             'srikandi.client.read' => 'Melihat daftar client Srikandi dan statusnya.',
             'srikandi.client.create' => 'Menambah client Srikandi baru.',
             'srikandi.client.update' => 'Mengubah kredensial dan konfigurasi client Srikandi.',
