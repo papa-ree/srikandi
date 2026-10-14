@@ -1,0 +1,99 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+/**
+ * Snapshot detail panen per SESI scraper (rak-srikandi PLAN 2026-10-14).
+ *
+ * Ini bukan salinan naskah -- ini laporan DIAGNOSTIK: berapa baris yang
+ * benar-benar dibaca tiap siklus (`fetched`/`domRows`), berapa yang
+ * terenkripsi (`encryptedResponses`), apakah cursor habis, dan berapa yang
+ * baru/revisi/tetap menurut sisi scraper. Gunanya menjawab "kenapa hasil panen
+ * hari ini kosong" tanpa menebak dari tabel naskah.
+ *
+ * 🔴 TABEL TERPISAH dari `srikandi_naskah`/`srikandi_naskah_keluar`, dan itu
+ * disengaja. Naskah adalah DATA (satu baris = satu dokumen); snapshot ini
+ * SATU baris = satu sesi scraper, dengan array `snapshots` berisi ringkasan
+ * per jenis di dalamnya. Menyatukannya akan mencampur satu-dokumen dengan
+ * satu-sesi di tabel yang sama.
+ *
+ * Ikut pola tabel Srikandi lain, tanpa pengecualian:
+ *
+ *   - Penentu pemilik `sumber` `string(64)` = `srikandi_clients.slug`, TANPA
+ *     foreign key. Dokumen/laporan yang sudah tersimpan tidak boleh hilang
+ *     hanya karena operator mengganti nama atau menonaktifkan client.
+ *   - `sumber` NOT NULL tanpa default: default berarti laporan yang gagal
+ *     menentukan pemiliknya tersimpan seolah milik client `default`.
+ *
+ * 🔴 IDEMPOTENSI lewat `UNIQUE (sumber, started_at, finished_at)`.
+ *
+ * Scraper mengirim snapshot di akhir siklus dengan `try/catch` yang menelan
+ * error (non-fatal). Kalau jaringan putus setelah request sampai tapi sebelum
+ * respons terbaca, siklus berikutnya bisa mengirim ulang sesi yang sama.
+ * Tanpa unique key, kiriman kedua jadi baris kedua -- dan laporan diagnostik
+ * yang terduplikasi justru membuat masalah yang mau didiagnosis terlihat
+ * dua kali lebih besar.
+ *
+ * 🔴 Waktu dikirim sebagai ISO dengan offset +07:00 (`toJakartaISO`). Kolom
+ * `timestamp` menyimpannya setelah di-normalisasi Eloquent; yang penting
+ * konsisten, bukan offset mentahnya.
+ *
+ * Primary key UUID, konsisten dengan tabel Srikandi lain.
+ */
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::create('srikandi_session_snapshots', function (Blueprint $table) {
+            $table->uuid('id')->primary();
+
+            // Slug client pemilik sesi. NOT NULL tanpa default -- lihat catatan
+            // di docblock migrasi.
+            $table->string('sumber', 64);
+
+            // Rentang sesi. Bukan `started_at` saja: satu slug bisa menjalankan
+            // beberapa siklus berurutan, dan `finished_at` yang membedakannya.
+            $table->timestamp('started_at');
+            $table->timestamp('finished_at');
+
+            // 'success' | 'failed'. Divalidasi di controller; disimpan string
+            // supaya nilai baru dari scraper tidak butuh migrasi enum.
+            $table->string('status', 20);
+
+            // Kode error terklasifikasi scraper (mis. LOGIN_FAILED). NULL saat
+            // sukses.
+            $table->string('error_code', 100)->nullable();
+
+            // Waktu login/naskah sesi ini. NULLABLE: sesi yang gagal login
+            // tidak pernah punya keduanya.
+            $table->timestamp('login_at')->nullable();
+            $table->timestamp('naskah_at')->nullable();
+
+            /*
+             * Array `CycleSnapshot[]` apa adanya dari scraper (jenis, fetched,
+             * domRows, encryptedResponses, baru, revisi, tetap, hilangDariSrikandi,
+             * round/maxRounds...). Disimpan mentah: bentuknya bisa bertambah
+             * tanpa migrasi, dan ini murni laporan baca-saja.
+             */
+            $table->json('snapshots')->nullable();
+
+            $table->timestamps();
+
+            // `sumber` kolom PERTAMA: dua client bisa punya sesi dengan rentang
+            // identik. Idempotensi harus per-client, bukan global.
+            $table->unique(['sumber', 'started_at', 'finished_at']);
+
+            // Daftar/diagnostik: satu client, sesi terbaru lebih dulu.
+            $table->index(['sumber', 'started_at']);
+            // Prune retensi: hapus yang lebih tua dari N hari di semua client.
+            $table->index('started_at');
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('srikandi_session_snapshots');
+    }
+};

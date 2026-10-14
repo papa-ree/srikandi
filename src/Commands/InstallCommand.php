@@ -21,11 +21,20 @@ class InstallCommand extends Command
     /**
      * Tabel yang harus ada setelah install.
      *
+     * 🔴 Daftar ini menentukan apakah `migrate` perlu dijalankan: `srikandi:install`
+     * hanya mem-publish + migrate kalau ADA tabel yang belum ada. Karena itu
+     * SEMUA tabel milik package harus terdaftar di sini -- kalau tidak, migration
+     * baru akan diam-diam dilewati pada instalasi yang tabel lamanya sudah ada.
+     *
      * @var list<string>
      */
     protected array $tables = [
         'srikandi_otp_states',
         'srikandi_naskah',
+        'srikandi_clients',
+        'srikandi_notify_recipients',
+        'srikandi_naskah_keluar',
+        'srikandi_session_snapshots',
     ];
 
     /**
@@ -108,7 +117,7 @@ class InstallCommand extends Command
         // ada akan gagal dengan error yang tidak menjelaskan apa pun.
         $this->ensureWaraClient();
 
-        $this->info('bale/srikandi terpasang. 2 tabel siap dipakai.');
+        $this->info(sprintf('bale/srikandi terpasang. %d tabel siap dipakai.', count($this->tables)));
 
         $this->newLine();
         $this->line('Langkah berikutnya:');

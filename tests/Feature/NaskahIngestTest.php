@@ -9,20 +9,16 @@ use Illuminate\Support\Str;
 require_once __DIR__.'/../helpers.php';
 
 uses(RefreshDatabase::class)
-    // 🔴 Client `default` dibuat di sini, bukan di tiap test.
+    // 🔴 Client `default` dibuat oleh `srikandiSetup()`, bukan di sini.
     //
-    // Endpoint sekarang menolak `sumber` yang slug-nya tidak ada di
-    // `srikandi_clients`, jadi setiap test yang mengirim `sumber: default`
-    // butuh client itu benar-benar ada. Kalau tiap test membuat sendiri,
-    // menambah test baru berarti harus ingat - dan test yang lupa akan gagal
-    // dengan 422 yang menyesatkan, bukan karena ada yang salah dengan naskahnya.
+    // Endpoint menolak `sumber` yang slug-nya tidak ada di `srikandi_clients`,
+    // jadi setiap test yang mengirim `sumber: default` butuh client itu ada.
+    // Membuatnya lagi di sini akan menabrak unique key `srikandi_clients.slug`
+    // karena setup sudah `firstOrCreate` baris yang sama.
     ->beforeEach(function () {
-        srikandiSetup();
-
-        SrikandiClient::query()->create([
-            'slug' => 'default',
-            'nama' => 'Client Default',
-        ]);
+        // `srikandiSetup()` mengembalikan Closure yang memakai `$this`, jadi
+        // harus dipanggil dalam konteks test — bukan `srikandiSetup()` polos.
+        srikandiSetup()->call($this);
     });
 
 /**

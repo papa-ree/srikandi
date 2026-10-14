@@ -3,6 +3,7 @@
 namespace Bale\Srikandi;
 
 use Bale\Srikandi\Commands\InstallCommand;
+use Bale\Srikandi\Commands\PruneSessionSnapshotsCommand;
 use Bale\Srikandi\Commands\PublishMigrationCommand;
 use Bale\Srikandi\Listeners\HandleIncomingMessage;
 use Bale\Wara\Events\WaraIncomingMessage;
@@ -21,6 +22,7 @@ class SrikandiServiceProvider extends ServiceProvider
 
         $this->commands([
             InstallCommand::class,
+            PruneSessionSnapshotsCommand::class,
             PublishMigrationCommand::class,
         ]);
     }

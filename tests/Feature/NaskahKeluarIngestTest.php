@@ -11,14 +11,13 @@ require_once __DIR__.'/../helpers.php';
 
 uses(RefreshDatabase::class)
     ->beforeEach(function () {
-        srikandiSetup();
-
-        // `sumber` wajib dan harus slug yang ada. Sama seperti Naskah Masuk,
-        // client `default` dibuat sekali di sini, bukan di tiap test.
-        SrikandiClient::query()->create([
-            'slug' => 'default',
-            'nama' => 'Client Default',
-        ]);
+        // `srikandiSetup()` mengembalikan Closure yang memakai `$this`, jadi
+        // harus dipanggil dalam konteks test — bukan `srikandiSetup()` polos.
+        //
+        // Client `default` sudah dibuat setup lewat `firstOrCreate` (dibutuhkan
+        // karena `sumber` wajib slug yang terdaftar); membuatnya lagi di sini
+        // akan menabrak unique key `srikandi_clients.slug`.
+        srikandiSetup()->call($this);
     });
 
 /**

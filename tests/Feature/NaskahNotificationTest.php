@@ -13,7 +13,9 @@ require_once __DIR__.'/../helpers.php';
 
 uses(RefreshDatabase::class)
     ->beforeEach(function () {
-        srikandiSetup();
+        // `srikandiSetup()` mengembalikan Closure yang memakai `$this`, jadi
+        // harus dipanggil dalam konteks test — bukan `srikandiSetup()` polos.
+        srikandiSetup()->call($this);
 
         // Pastikan client default ada
         SrikandiClient::query()->firstOrCreate(

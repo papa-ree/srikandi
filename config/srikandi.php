@@ -77,6 +77,26 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Retensi snapshot sesi scraper
+    |--------------------------------------------------------------------------
+    |
+    | `srikandi_session_snapshots` tumbuh sekitar satu-dua baris per client per
+    | hari dan TIDAK pernah dipakai untuk membaca ulang naskah -- isinya murni
+    | diagnostik ("panen siklus ini kenapa kosong"). Jadi baris yang lebih tua
+    | dari `retention_days` dihapus berkala oleh
+    | `php artisan srikandi:prune-session-snapshots`.
+    |
+    | 90 hari cukup untuk melihat pola musiman (mis. panen macet tiap awal
+    | bulan) tanpa menyimpan tabel yang tumbuh selamanya.
+    |
+    */
+
+    'snapshot' => [
+        'retention_days' => (int) env('SRIKANDI_SNAPSHOT_RETENTION_DAYS', 90),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Blind index untuk kolom terenkripsi
     |--------------------------------------------------------------------------
     |

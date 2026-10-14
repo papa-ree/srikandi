@@ -81,4 +81,12 @@ Route::middleware('bale.api')->prefix('api/v1/srikandi')->name('api.v1.srikandi.
     Route::post('clients/{slug}/heartbeat', [ClientController::class, 'heartbeat'])
         ->middleware('scope:srikandi.naskah.write')
         ->name('clients.heartbeat');
+
+    // 🔴 Scope tetap `srikandi.naskah.write`, alasan sama dengan heartbeat:
+    // snapshot adalah laporan hasil panen. Token yang boleh mengirim naskah
+    // sudah pasti boleh melaporkan bagaimana panennya berjalan. Ini BUKAN
+    // pengganti heartbeat -- keduanya terpisah dan hidup berdampingan.
+    Route::post('clients/{slug}/sessions/snapshot', [ClientController::class, 'sessionSnapshot'])
+        ->middleware('scope:srikandi.naskah.write')
+        ->name('clients.sessions.snapshot');
 });

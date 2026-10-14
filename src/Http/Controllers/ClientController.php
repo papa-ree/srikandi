@@ -5,10 +5,12 @@ namespace Bale\Srikandi\Http\Controllers;
 use Bale\Srikandi\Exceptions\SrikandiException;
 use Bale\Srikandi\Models\SrikandiClient;
 use Bale\Srikandi\Services\NaskahNotifier;
+use Bale\Srikandi\Services\SessionSnapshotService;
 use Bale\Srikandi\Support\ErrorSanitizer;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\Rule;
 use Spatie\Activitylog\Models\Activity;
 
 /**
@@ -34,7 +36,10 @@ use Spatie\Activitylog\Models\Activity;
  */
 class ClientController extends SrikandiController
 {
-    public function __construct(protected NaskahNotifier $notifier) {}
+    public function __construct(
+        protected NaskahNotifier $notifier,
+        protected SessionSnapshotService $sessionSnapshots,
+    ) {}
 
     /**
      * `GET /clients` — daftar client untuk tear-down dan pemilihan account.
@@ -181,6 +186,70 @@ class ClientController extends SrikandiController
                 && ($client->last_login_at === null
                     || $client->credentials_rotated_at->gt($client->last_login_at)),
         ]);
+    }
+
+    /**
+     * `POST /clients/{slug}/sessions/snapshot` — laporan diagnostik satu sesi.
+     *
+     * 🔴 BERBEDA dari `heartbeat`, dan bukan penggantinya. Heartbeat tetap 4
+     * field (`login_at`, `naskah_at`, `error_at`, `error_message`) dan mengurus
+     * status "kapan terakhir hidup". Endpoint ini menerima DETAIL panen per
+     * jenis (`fetched`, `domRows`, `encryptedResponses`, `baru`, `revisi`,
+     * `tetap`, `hilangDariSrikandi`, `round`...) untuk menjawab "kenapa hasil
+     * panen siklus ini kosong" tanpa menebak dari tabel naskah.
+     *
+     * 🔴 Pemilik sesi (`sumber`) diambil dari `{slug}` di PATH, BUKAN dari body.
+     * Scraper tidak mengirim `sumber` di payload snapshot (`client-bale.ts`),
+     * persis seperti `credentials`/`heartbeat`. Slug tak dikenal => 404, client
+     * nonaktif => 403 -- lewat {@see resolveClient()}, sama dengan dua endpoint
+     * client lainnya.
+     *
+     * 🔴 Respons `{ ok: true }` saja. Scraper menelan error kiriman ini
+     * (non-fatal), jadi tidak ada bentuk respons yang perlu dia baca; `id`
+     * disertakan sekadar supaya bisa ditelusuri dari log bila perlu.
+     */
+    public function sessionSnapshot(Request $request, string $slug): JsonResponse
+    {
+        $validated = $request->validate([
+            'started_at' => ['required', 'date'],
+            'finished_at' => ['required', 'date', 'after_or_equal:started_at'],
+            'status' => ['required', 'string', Rule::in(['success', 'failed'])],
+            'error_code' => ['nullable', 'string', 'max:100'],
+            'login_at' => ['nullable', 'date'],
+            'naskah_at' => ['nullable', 'date'],
+            // Boleh kosong (sesi gagal total sebelum panen apa pun).
+            'snapshots' => ['present', 'array', 'max:50'],
+            // 🔴 `jenis` WAJIB dan dibatasi dua nilai: itu satu-satunya field
+            // yang membuat isi array ini bisa dibaca. Sisanya `nullable` --
+            // scraper versi lama/baru boleh punya field lebih sedikit atau
+            // lebih banyak tanpa menggagalkan seluruh snapshot.
+            'snapshots.*.jenis' => ['required', 'string', Rule::in(['naskah masuk', 'naskah keluar'])],
+            'snapshots.*.fetched' => ['nullable', 'integer', 'min:0'],
+            'snapshots.*.complete' => ['nullable', 'boolean'],
+            'snapshots.*.rows' => ['nullable', 'integer', 'min:0'],
+            'snapshots.*.responses' => ['nullable', 'integer', 'min:0'],
+            'snapshots.*.encryptedResponses' => ['nullable', 'integer', 'min:0'],
+            'snapshots.*.cursorExhausted' => ['nullable', 'boolean'],
+            'snapshots.*.tfootSaysDone' => ['nullable', 'boolean'],
+            'snapshots.*.domRows' => ['nullable', 'integer', 'min:0'],
+            'snapshots.*.baru' => ['nullable', 'integer', 'min:0'],
+            'snapshots.*.revisi' => ['nullable', 'integer', 'min:0'],
+            'snapshots.*.tetap' => ['nullable', 'integer', 'min:0'],
+            'snapshots.*.hilangDariSrikandi' => ['nullable', 'integer', 'min:0'],
+            'snapshots.*.round' => ['nullable', 'integer', 'min:0'],
+            'snapshots.*.maxRounds' => ['nullable', 'integer', 'min:0'],
+        ]);
+
+        try {
+            $client = $this->resolveClient($slug);
+            $snapshot = $this->sessionSnapshots->store($client->slug, $validated);
+        } catch (SrikandiException $e) {
+            return $this->failure($e);
+        } catch (\Throwable $e) {
+            return $this->unexpected($e);
+        }
+
+        return $this->ok(['id' => $snapshot->getKey()]);
     }
 
     /**
