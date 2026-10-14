@@ -31,6 +31,7 @@ use Bale\Srikandi\Livewire\Pages\Landlord\Overview\Section\OverviewCharts;
 use Bale\Srikandi\Livewire\Pages\Landlord\Overview\Section\OverviewMetrics;
 use Bale\Srikandi\Models\SrikandiClient;
 use Bale\Srikandi\Models\SrikandiNaskah;
+use Bale\Srikandi\Models\SrikandiNaskahKeluar;
 use Bale\Srikandi\Models\SrikandiNotifyRecipient;
 use Bale\Srikandi\Support\OtpPhone;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -74,6 +75,24 @@ function overviewNaskah(
         'tanggal_naskah' => $tanggalNaskah,
         'status_baca' => $statusBaca,
         'status_berkas' => $statusBerkas,
+        'first_seen_at' => ($firstSeen ?? $tanggalNaskah).' 08:00:00',
+        'last_seen_at' => now(),
+    ]);
+}
+
+function overviewNaskahKeluar(
+    string $sumber,
+    string $nomor,
+    string $tanggalNaskah,
+    ?string $statusTindakLanjut = null,
+    ?string $firstSeen = null,
+): SrikandiNaskahKeluar {
+    return SrikandiNaskahKeluar::create([
+        'sumber' => $sumber,
+        'nomor_naskah' => $nomor,
+        'tahun' => (int) substr($tanggalNaskah, 0, 4),
+        'tanggal_naskah' => $tanggalNaskah,
+        'status_tindak_lanjut' => $statusTindakLanjut,
         'first_seen_at' => ($firstSeen ?? $tanggalNaskah).' 08:00:00',
         'last_seen_at' => now(),
     ]);
@@ -203,6 +222,21 @@ describe('Overview — metrik', function () {
         Livewire::test(OverviewMetrics::class, ['bulan' => '2026-08'])
             ->assertViewHas('withBerkas', 1);
     });
+
+    it('menghitung naskah keluar pada bulan terpilih, memakai tanggal_naskah', function () {
+        overviewNaskahKeluar('default', 'K/1', '2026-08-05');
+        overviewNaskahKeluar('default', 'K/2', '2026-08-20');
+        overviewNaskahKeluar('default', 'K/3', '2026-09-01');
+
+        // 🔴 Tanggal DOKUMEN Agustus, tapi PERTAMA DILIHAT di September.
+        overviewNaskahKeluar('default', 'K/4', '2026-08-15', firstSeen: '2026-09-10');
+
+        Livewire::test(OverviewMetrics::class, ['bulan' => '2026-08'])
+            ->assertViewHas('totalKeluar', 3);
+
+        Livewire::test(OverviewMetrics::class, ['bulan' => '2026-09'])
+            ->assertViewHas('totalKeluar', 1);
+    });
 });
 
 describe('Overview — grafik', function () {
@@ -221,6 +255,23 @@ describe('Overview — grafik', function () {
                     && array_sum($data) === 3;
             })
             ->assertViewHas('sumberLabels', fn (array $labels): bool => in_array('default', $labels, true));
+    });
+
+    it('mengisi tren naskah keluar dan distribusi status tindak lanjut', function () {
+        overviewNaskahKeluar('default', 'K/1', '2026-08-05', statusTindakLanjut: 'KIRIM');
+        overviewNaskahKeluar('default', 'K/2', '2026-08-05', statusTindakLanjut: 'BELUM');
+        overviewNaskahKeluar('default', 'K/3', '2026-08-21', statusTindakLanjut: 'KIRIM');
+
+        Livewire::test(OverviewCharts::class, ['bulan' => '2026-08'])
+            ->assertViewHas('keluarTrendData', function (array $data): bool {
+                return $data[4] === 2          // 5 Agustus
+                    && $data[20] === 1         // 21 Agustus
+                    && array_sum($data) === 3;
+            })
+            ->assertViewHas('keluarStatusLabels', function (array $labels): bool {
+                return in_array('KIRIM', $labels, true) && in_array('BELUM', $labels, true);
+            })
+            ->assertViewHas('keluarStatusData', fn (array $data): bool => array_sum($data) === 3);
     });
 });
 

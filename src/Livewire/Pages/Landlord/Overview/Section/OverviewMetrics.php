@@ -5,6 +5,7 @@ namespace Bale\Srikandi\Livewire\Pages\Landlord\Overview\Section;
 use Bale\Srikandi\Livewire\Pages\Landlord\Overview\Concerns\ResolvesBulan;
 use Bale\Srikandi\Models\SrikandiClient;
 use Bale\Srikandi\Models\SrikandiNaskah;
+use Bale\Srikandi\Models\SrikandiNaskahKeluar;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Livewire\Component;
 
@@ -42,6 +43,7 @@ class OverviewMetrics extends Component
         return view('srikandi::livewire.pages.landlord.overview.section.overview-metrics', [
             'bulanLabel' => $this->bulanLabel($this->bulan),
             'total' => (clone $base)->count(),
+            'totalKeluar' => (clone SrikandiNaskahKeluar::query()->whereBetween('tanggal_naskah', [$start, $end]))->count(),
             'menyetor' => (clone $base)->distinct()->count('sumber'),
             'withBerkas' => (clone $base)
                 ->whereNotNull('status_berkas')

@@ -4,6 +4,7 @@ namespace Bale\Srikandi\Livewire\Pages\Landlord\Overview\Section;
 
 use Bale\Srikandi\Livewire\Pages\Landlord\Overview\Concerns\ResolvesBulan;
 use Bale\Srikandi\Models\SrikandiNaskah;
+use Bale\Srikandi\Models\SrikandiNaskahKeluar;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Livewire\Component;
 
@@ -49,13 +50,21 @@ class OverviewCharts extends Component
             ->groupByRaw('DATE(tanggal_naskah)')
             ->pluck('total', 'hari');
 
+        $dailyKeluar = SrikandiNaskahKeluar::query()
+            ->whereBetween('tanggal_naskah', [$dStart, $dEnd])
+            ->selectRaw('DATE(tanggal_naskah) as hari, COUNT(*) as total')
+            ->groupByRaw('DATE(tanggal_naskah)')
+            ->pluck('total', 'hari');
+
         $trendLabels = [];
         $trendData = [];
+        $keluarTrendData = [];
 
         for ($day = 1; $day <= $start->daysInMonth; $day++) {
             $key = $start->copy()->day($day)->format('Y-m-d');
             $trendLabels[] = (string) $day;
             $trendData[] = (int) ($daily[$key] ?? 0);
+            $keluarTrendData[] = (int) ($dailyKeluar[$key] ?? 0);
         }
 
         $bySumber = SrikandiNaskah::query()
@@ -72,11 +81,20 @@ class OverviewCharts extends Component
             ->orderByDesc('total')
             ->get();
 
+        $byStatusKeluar = SrikandiNaskahKeluar::query()
+            ->whereBetween('tanggal_naskah', [$dStart, $dEnd])
+            ->selectRaw('status_tindak_lanjut, COUNT(*) as total')
+            ->groupBy('status_tindak_lanjut')
+            ->orderByDesc('total')
+            ->get();
+
         return view('srikandi::livewire.pages.landlord.overview.section.overview-charts', [
             'bulanLabel' => $this->bulanLabel($this->bulan),
             'trendLabels' => $trendLabels,
             'trendData' => $trendData,
+            'keluarTrendData' => $keluarTrendData,
             'totalPeriode' => array_sum($trendData),
+            'totalKeluarPeriode' => array_sum($keluarTrendData),
             'sumberLabels' => $bySumber->pluck('sumber')->all(),
             'sumberData' => $bySumber->pluck('total')->map(fn ($value): int => (int) $value)->all(),
             'statusLabels' => $byStatus->map(function ($row) {
@@ -85,6 +103,12 @@ class OverviewCharts extends Component
                 return $value !== '' ? $value : __('Tidak diketahui');
             })->all(),
             'statusData' => $byStatus->pluck('total')->map(fn ($value): int => (int) $value)->all(),
+            'keluarStatusLabels' => $byStatusKeluar->map(function ($row) {
+                $value = trim((string) $row->status_tindak_lanjut);
+
+                return $value !== '' ? $value : __('Tidak diketahui');
+            })->all(),
+            'keluarStatusData' => $byStatusKeluar->pluck('total')->map(fn ($value): int => (int) $value)->all(),
         ]);
     }
 }

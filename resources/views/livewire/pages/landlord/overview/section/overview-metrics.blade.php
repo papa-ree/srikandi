@@ -9,7 +9,7 @@
     Mencampur keduanya tanpa label periode akan membuat operator mengira angka
     itu juga ikut tersaring bulan.
 --}}
-<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
 
     {{-- Naskah Masuk --}}
     <div class="group relative overflow-hidden rounded-xl border border-gray-100 bg-white p-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md dark:border-white/[0.06] dark:bg-gray-900">
@@ -85,6 +85,24 @@
             <div class="mt-0.5 text-[11px] text-gray-400 dark:text-gray-500">{{ __('Status berkas terisi') }}</div>
         </div>
         <div class="pointer-events-none absolute -bottom-4 -right-4 h-20 w-20 rounded-full bg-amber-500/5 transition-all duration-300 group-hover:scale-150"></div>
+    </div>
+
+    {{-- Naskah Keluar --}}
+    <div class="group relative overflow-hidden rounded-xl border border-gray-100 bg-white p-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md dark:border-white/[0.06] dark:bg-gray-900">
+        <div class="flex items-start justify-between">
+            <div class="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-rose-500 to-rose-600 shadow-md shadow-rose-500/30 dark:shadow-rose-500/20">
+                <x-lucide-send class="size-5 text-white" />
+            </div>
+            <span class="inline-flex items-center rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-rose-700 dark:bg-rose-900/30 dark:text-rose-300">
+                {{ $bulanLabel }}
+            </span>
+        </div>
+        <div class="mt-4">
+            <div class="text-3xl font-bold text-gray-900 dark:text-white">{{ number_format($totalKeluar) }}</div>
+            <div class="mt-1 text-xs font-medium text-gray-500 dark:text-gray-400">{{ __('Naskah Keluar') }}</div>
+            <div class="mt-0.5 text-[11px] text-gray-400 dark:text-gray-500">{{ __('Berdasarkan tanggal naskah') }}</div>
+        </div>
+        <div class="pointer-events-none absolute -bottom-4 -right-4 h-20 w-20 rounded-full bg-rose-500/5 transition-all duration-300 group-hover:scale-150"></div>
     </div>
 
 </div>
