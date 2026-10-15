@@ -224,6 +224,14 @@ class InstallCommand extends Command
             // Keluar. Keduanya read-only, tapi pemisahan tetap dipertahankan
             // supaya aksesnya bisa diberikan per-jenis tanpa mengubah kode.
             'srikandi.naskah.keluar.read' => 'Melihat daftar dan detail naskah keluar yang ter-cache. Read-only.',
+            // 🔴 Permission terpisah dari kedua arsip naskah.
+            //
+            // Log Sesi menampilkan LAPORAN DIAGNOSTIK scraper (satu baris = satu
+            // sesi, bukan satu dokumen). Operator yang boleh membaca arsip naskah
+            // belum tentu perlu melihat metrik internal panen (cursorExhausted,
+            // encryptedResponses, dst). Read-only: tidak ada form, aksi tulis,
+            // maupun hapus.
+            'srikandi.sesi.read' => 'Melihat log sesi scraper Srikandi (snapshot diagnostik panen). Read-only.',
             'srikandi.client.read' => 'Melihat daftar client Srikandi dan statusnya.',
             'srikandi.client.create' => 'Menambah client Srikandi baru.',
             'srikandi.client.update' => 'Mengubah kredensial dan konfigurasi client Srikandi.',

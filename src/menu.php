@@ -33,6 +33,12 @@ return [
                     'icon' => 'send',
                     'permission' => 'srikandi.naskah.keluar.read',
                 ],
+                [
+                    'label' => 'Log Sesi',
+                    'url' => 'srikandi/sesi',
+                    'icon' => 'activity',
+                    'permission' => 'srikandi.sesi.read',
+                ],
             ],
         ],
     ],

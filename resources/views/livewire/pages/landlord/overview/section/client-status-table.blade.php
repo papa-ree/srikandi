@@ -11,7 +11,7 @@
                     {{ __('Kesehatan Client') }}
                 </h2>
                 <p class="text-xs text-gray-500 dark:text-gray-400">
-                    {{ __('Status akun, sinkronisasi, dan notifikasi · :total client', ['total' => $totalClients]) }}
+                    {{ __('Status sesi terbaru, sinkronisasi, dan notifikasi · :total client', ['total' => $totalClients]) }}
                 </p>
             </div>
         </div>
@@ -47,8 +47,7 @@
                         <th class="px-5 py-3">{{ __('Status') }}</th>
                         <th class="hidden px-5 py-3 lg:table-cell">{{ __('Wara') }}</th>
                         <th class="px-5 py-3">{{ __('Naskah') }}</th>
-                        <th class="hidden px-5 py-3 xl:table-cell">{{ __('Login Terakhir') }}</th>
-                        <th class="hidden px-5 py-3 lg:table-cell">{{ __('Naskah Terakhir') }}</th>
+                        <th class="hidden px-5 py-3 lg:table-cell">{{ __('Sesi Terakhir') }}</th>
                         <th class="px-5 py-3">{{ __('Notifikasi') }}</th>
                     </tr>
                 </thead>
@@ -68,13 +67,8 @@
                             </td>
 
                             <td class="px-5 py-3.5">
-                                @if ($client->last_error_at)
-                                    <x-core::badge color="{{ $row['status'][1] }}"
-                                        :label="$row['status'][0]"
-                                        title="{{ $client->last_error_message }}" />
-                                @else
-                                    <x-core::badge color="{{ $row['status'][1] }}" :label="$row['status'][0]" />
-                                @endif
+                                <x-core::badge color="{{ $row['status'][1] }}" :label="$row['status'][0]"
+                                    @if ($row['session']?->error_code) title="{{ $row['session']->error_code }}" @endif />
                             </td>
 
                             <td class="hidden px-5 py-3.5 lg:table-cell">
@@ -94,12 +88,20 @@
                                 </span>
                             </td>
 
-                            <td class="hidden px-5 py-3.5 text-xs text-gray-500 dark:text-gray-400 xl:table-cell">
-                                {{ $client->last_login_at?->format('d M Y H:i') ?? '—' }}
-                            </td>
-
-                            <td class="hidden px-5 py-3.5 text-xs text-gray-500 dark:text-gray-400 lg:table-cell">
-                                {{ $client->last_naskah_at?->format('d M Y H:i') ?? '—' }}
+                            <td class="hidden px-5 py-3.5 lg:table-cell">
+                                @if ($row['session'])
+                                    <div class="text-xs text-gray-600 dark:text-gray-400">
+                                        {{ $row['session']->finished_at?->format('d M Y H:i') ?? '—' }}
+                                    </div>
+                                    @can('srikandi.sesi.read')
+                                        <a href="{{ route('srikandi.sesi.show', $row['session']) }}"
+                                            class="text-[11px] font-medium text-teal-600 hover:underline dark:text-teal-400">
+                                            {{ __('Lihat detail') }}
+                                        </a>
+                                    @endcan
+                                @else
+                                    <span class="text-xs text-gray-400 dark:text-gray-600">—</span>
+                                @endif
                             </td>
 
                             <td class="px-5 py-3.5">
@@ -156,30 +158,31 @@
                             </dd>
                         </div>
 
-                        <div class="rounded-lg bg-gray-50 px-3 py-2 dark:bg-white/[0.03]">
+                        <div class="col-span-2 rounded-lg bg-gray-50 px-3 py-2 dark:bg-white/[0.03]">
                             <dt class="text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500">
-                                {{ __('Login Terakhir') }}
+                                {{ __('Sesi Terakhir') }}
                             </dt>
-                            <dd class="mt-0.5 text-xs text-gray-600 dark:text-gray-400">
-                                {{ $client->last_login_at?->format('d M Y H:i') ?? '—' }}
-                            </dd>
-                        </div>
-
-                        <div class="rounded-lg bg-gray-50 px-3 py-2 dark:bg-white/[0.03]">
-                            <dt class="text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500">
-                                {{ __('Naskah Terakhir') }}
-                            </dt>
-                            <dd class="mt-0.5 text-xs text-gray-600 dark:text-gray-400">
-                                {{ $client->last_naskah_at?->format('d M Y H:i') ?? '—' }}
+                            <dd class="mt-0.5 flex items-center justify-between gap-2">
+                                <span class="text-xs text-gray-600 dark:text-gray-400">
+                                    {{ $row['session']?->finished_at?->format('d M Y H:i') ?? '—' }}
+                                </span>
+                                @if ($row['session'])
+                                    @can('srikandi.sesi.read')
+                                        <a href="{{ route('srikandi.sesi.show', $row['session']) }}"
+                                            class="shrink-0 text-[11px] font-medium text-teal-600 hover:underline dark:text-teal-400">
+                                            {{ __('Lihat detail') }}
+                                        </a>
+                                    @endcan
+                                @endif
                             </dd>
                         </div>
                     </dl>
 
-                    {{-- Error message (if any) --}}
-                    @if ($client->last_error_message)
+                    {{-- Kode error sesi terbaru (kalau gagal) --}}
+                    @if ($row['session']?->error_code)
                         <div class="mt-3 flex items-start gap-2 rounded-lg border border-red-100 bg-red-50 px-3 py-2.5 dark:border-red-800/30 dark:bg-red-900/15">
                             <x-lucide-alert-triangle class="mt-0.5 size-3.5 shrink-0 text-red-500 dark:text-red-400" />
-                            <p class="text-xs text-red-700 dark:text-red-300">{{ $client->last_error_message }}</p>
+                            <p class="text-xs text-red-700 dark:text-red-300">{{ $row['session']->error_code }}</p>
                         </div>
                     @endif
                 </div>

@@ -33,6 +33,7 @@ use Bale\Srikandi\Models\SrikandiClient;
 use Bale\Srikandi\Models\SrikandiNaskah;
 use Bale\Srikandi\Models\SrikandiNaskahKeluar;
 use Bale\Srikandi\Models\SrikandiNotifyRecipient;
+use Bale\Srikandi\Models\SrikandiSessionSnapshot;
 use Bale\Srikandi\Support\OtpPhone;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
@@ -110,6 +111,26 @@ function overviewRecipient(SrikandiClient $client, string $phone, bool $active =
     $recipient->save();
 
     return $recipient;
+}
+
+/**
+ * Satu sesi scraper. `finished_at` yang menentukan "sesi terbaru", jadi test
+ * bisa membuat sesi lama & baru pada slug yang sama.
+ */
+function overviewSesi(
+    string $sumber,
+    string $status = 'success',
+    string $finishedAt = '2026-08-05 10:00:00',
+    ?string $errorCode = null,
+    ?string $startedAt = null,
+): SrikandiSessionSnapshot {
+    return SrikandiSessionSnapshot::create([
+        'sumber' => $sumber,
+        'started_at' => $startedAt ?? $finishedAt,
+        'finished_at' => $finishedAt,
+        'status' => $status,
+        'error_code' => $errorCode,
+    ]);
 }
 
 describe('Overview Srikandi', function () {
@@ -276,19 +297,14 @@ describe('Overview — grafik', function () {
 });
 
 describe('Overview — kesehatan client', function () {
-    it('menampilkan client beserta jumlah penerima aktif dan status kesiapan', function () {
+    it('menampilkan client beserta jumlah penerima aktif dan status dari sesi terbaru', function () {
         $client = SrikandiClient::query()->where('slug', 'default')->firstOrFail();
-        $client->setCredentials([
-            'username' => 'user-srikandi',
-            'password' => 'rahasia',
-            'phone' => '081200000001',
-        ]);
-        $client->save();
 
         overviewRecipient($client, '628000000001', active: true);
         overviewRecipient($client, '628000000002', active: false);
 
         overviewNaskah('default', 'A/1', '2026-08-05');
+        overviewSesi('default', 'success', '2026-08-05 10:00:00');
 
         Livewire::test(ClientStatusTable::class, ['bulan' => '2026-08'])
             ->assertViewHas('rows', function ($rows) use ($client): bool {
@@ -297,33 +313,56 @@ describe('Overview — kesehatan client', function () {
                 return $row !== null
                     && $row['naskah'] === 1
                     && $row['recipients'] === 1
-                    && $row['status'][0] === __('Siap');
+                    && $row['status'][0] === __('Sukses')
+                    && $row['session']?->status === 'success';
             })
             ->assertSee('Client Default')
             ->assertSee('default');
     });
 
-    it('menandai client nonaktif sebagai Nonaktif', function () {
-        $client = SrikandiClient::query()->where('slug', 'default')->firstOrFail();
-        $client->forceFill(['is_active' => false])->save();
-
+    it('menampilkan "Belum ada sesi" bila client belum pernah mengirim sesi', function () {
         Livewire::test(ClientStatusTable::class, ['bulan' => '2026-08'])
             ->assertViewHas('rows', function ($rows): bool {
-                return $rows->first()['status'][0] === __('Nonaktif');
+                $row = $rows->first();
+
+                return $row['status'][0] === __('Belum ada sesi')
+                    && $row['session'] === null;
             });
     });
 
-    it('menandai client dengan error 24 jam terakhir sebagai Error', function () {
-        $client = SrikandiClient::query()->where('slug', 'default')->firstOrFail();
-        $client->forceFill([
-            'is_active' => true,
-            'last_error_at' => now()->subHour(),
-            'last_error_message' => 'login gagal',
-        ])->save();
+    it('mengambil status dari sesi PALING BARU berdasarkan finished_at', function () {
+        overviewSesi('default', 'success', '2026-08-05 10:00:00');
+        overviewSesi('default', 'failed', '2026-08-06 10:00:00', 'LOGIN_FAILED');
 
         Livewire::test(ClientStatusTable::class, ['bulan' => '2026-08'])
             ->assertViewHas('rows', function ($rows): bool {
-                return $rows->first()['status'][0] === __('Error');
+                $row = $rows->first();
+
+                return $row['status'][0] === __('Gagal')
+                    && $row['session']->finished_at->format('Y-m-d H:i') === '2026-08-06 10:00'
+                    && $row['session']->error_code === 'LOGIN_FAILED';
+            })
+            ->assertSee('LOGIN_FAILED');
+    });
+
+    it('menampilkan sesi terbaru walau selesai di luar bulan yang dipilih', function () {
+        // Sesi Juli, tapi tabel dibuka untuk Agustus: status adalah kondisi
+        // SEKARANG, tidak ikut disaring bulan (angka naskah yang ikut bulan).
+        overviewSesi('default', 'success', '2026-07-20 09:00:00');
+
+        Livewire::test(ClientStatusTable::class, ['bulan' => '2026-08'])
+            ->assertViewHas('rows', function ($rows): bool {
+                return $rows->first()['status'][0] === __('Sukses');
             });
+    });
+
+    it('menautkan ke detail Log Sesi bila user punya srikandi.sesi.read', function () {
+        Permission::firstOrCreate(['name' => 'srikandi.sesi.read', 'guard_name' => 'web']);
+        $this->user->givePermissionTo('srikandi.sesi.read');
+
+        $session = overviewSesi('default', 'success', '2026-08-05 10:00:00');
+
+        Livewire::test(ClientStatusTable::class, ['bulan' => '2026-08'])
+            ->assertSee(route('srikandi.sesi.show', $session), escape: false);
     });
 });

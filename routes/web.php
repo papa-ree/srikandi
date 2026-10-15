@@ -7,6 +7,8 @@ use Bale\Srikandi\Livewire\Pages\Landlord\Naskah\Index as NaskahIndex;
 use Bale\Srikandi\Livewire\Pages\Landlord\NaskahKeluar\Detail as NaskahKeluarDetail;
 use Bale\Srikandi\Livewire\Pages\Landlord\NaskahKeluar\Index as NaskahKeluarIndex;
 use Bale\Srikandi\Livewire\Pages\Landlord\Overview\Index as OverviewIndex;
+use Bale\Srikandi\Livewire\Pages\Landlord\Sesi\Detail as SesiDetail;
+use Bale\Srikandi\Livewire\Pages\Landlord\Sesi\Index as SesiIndex;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -87,4 +89,21 @@ Route::middleware(['web', 'auth'])->prefix('srikandi')->name('srikandi.')->group
     Route::get('/naskah-keluar/{naskahKeluar}', NaskahKeluarDetail::class)
         ->name('naskah-keluar.show')
         ->middleware('can:srikandi.naskah.keluar.read');
+
+    /*
+     * 🔴 Log Sesi adalah HALAMAN dan TABEL terpisah lagi, dengan permission
+     * sendiri (`srikandi.sesi.read`).
+     *
+     * Satu baris = satu SESI scraper (laporan diagnostik), bukan satu dokumen.
+     * Read-only: tidak ada route form, hanya dua route baca. Sesi yang sama
+     * bisa dikirim ulang scraper dan di-dedup lewat unique key, jadi tidak ada
+     * yang boleh diubah manual dari sini.
+     */
+    Route::get('/sesi', SesiIndex::class)
+        ->name('sesi.index')
+        ->middleware('can:srikandi.sesi.read');
+
+    Route::get('/sesi/{snapshot}', SesiDetail::class)
+        ->name('sesi.show')
+        ->middleware('can:srikandi.sesi.read');
 });

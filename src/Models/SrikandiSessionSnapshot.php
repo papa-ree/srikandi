@@ -2,6 +2,7 @@
 
 namespace Bale\Srikandi\Models;
 
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
@@ -85,5 +86,41 @@ class SrikandiSessionSnapshot extends Model
     public function scopeFailed(Builder $query): Builder
     {
         return $query->where('status', 'failed');
+    }
+
+    /**
+     * Sesi ini gagal.
+     *
+     * 🔴 Dipakai VIEW, bukan `$snapshot->status === 'failed'` yang ditulis ulang.
+     *
+     * Nilai `status` datang dari scraper dan disimpan apa adanya (kolomnya
+     * string, bukan enum, supaya nilai baru tidak butuh migrasi). Membandingkan
+     * string di dua tempat membuat badge dan ringkasan bisa tidak sepakat
+     * tentang sesi yang sama begitu nilainya berubah.
+     */
+    public function isFailed(): bool
+    {
+        return $this->status === 'failed';
+    }
+
+    /**
+     * Durasi sesi, mis. "12 menit 30 detik".
+     *
+     * NULL kalau salah satu ujung rentang tidak ada -- `diffForHumans()` akan
+     * melempar / mengembalikan nilai aneh untuk `null`, dan baris tanpa
+     * `finished_at` lebih baik tampil "—" daripada durasi palsu.
+     */
+    public function durationForHumans(): ?string
+    {
+        if ($this->started_at === null || $this->finished_at === null) {
+            return null;
+        }
+
+        // DIFF_ABSOLUTE: "12 menit" bukan "12 menit yang lalu". Ini panjang
+        // rentang, bukan jarak ke sekarang.
+        return $this->started_at->diffForHumans($this->finished_at, [
+            'syntax' => CarbonInterface::DIFF_ABSOLUTE,
+            'parts' => 2,
+        ]);
     }
 }
