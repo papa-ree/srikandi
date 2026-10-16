@@ -145,6 +145,19 @@ describe('Log Sesi — detail', function () {
             ->assertSee('satker-c');
     });
 
+    it('menampilkan pesan error', function () {
+        $record = sesiSnapshot([
+            'status' => 'failed',
+            'error_code' => 'LOGIN_FAILED',
+            'error_message' => 'Password salah.',
+        ]);
+
+        $this->withoutVite()
+            ->get('/srikandi/sesi/'.$record->getKey())
+            ->assertOk()
+            ->assertSee('Password salah.');
+    });
+
     it('menjawab 404 untuk id yang tidak ada', function () {
         $this->withoutVite()
             ->get('/srikandi/sesi/'.Str::uuid())

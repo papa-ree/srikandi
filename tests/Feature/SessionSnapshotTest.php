@@ -104,7 +104,19 @@ describe('POST /clients/{slug}/sessions/snapshot (snapshot per sesi)', function 
 
         expect($row->sumber)->toBe('default')
             ->and($row->status)->toBe('success')
-            ->and($row->error_code)->toBeNull();
+            ->and($row->error_code)->toBeNull()
+            ->and($row->error_message)->toBeNull();
+    });
+
+    it('menyimpan error_message yang tersanitasi', function () {
+        $this->postJson(snapshotUrl(), snapshotPayload([
+            'status' => 'failed',
+            'error_message' => 'Login gagal: password=Rahasia123',
+        ]), asScraper())->assertOk();
+
+        $row = SrikandiSessionSnapshot::query()->firstOrFail();
+
+        expect($row->error_message)->toBe('Login gagal: password=[REDACTED]');
     });
 
     it('menyimpan waktu +07:00 sebagai instant yang benar', function () {

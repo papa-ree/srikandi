@@ -229,6 +229,15 @@
 
                     <div>
                         <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                            {{ __('Pesan Error') }}
+                        </dt>
+                        <dd class="mt-0.5 break-words text-gray-800 dark:text-gray-200">
+                            {{ $snapshot->error_message ?? '—' }}
+                        </dd>
+                    </div>
+
+                    <div>
+                        <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
                             {{ __('ID') }}
                         </dt>
                         <dd class="mt-0.5 break-all font-mono text-xs text-gray-500 dark:text-gray-400">

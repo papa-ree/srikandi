@@ -39,6 +39,7 @@ class SessionSnapshotService
         $values = [
             'status' => $data['status'],
             'error_code' => $data['error_code'] ?? null,
+            'error_message' => $data['error_message'] ?? null,
             'login_at' => $this->nullableToAppTimezone($data['login_at'] ?? null),
             'naskah_at' => $this->nullableToAppTimezone($data['naskah_at'] ?? null),
             // Array `CycleSnapshot[]` apa adanya. Sengaja TIDAK di-reshape:

@@ -32,6 +32,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon $finished_at
  * @property string $status
  * @property string|null $error_code
+ * @property string|null $error_message
  * @property Carbon|null $login_at
  * @property Carbon|null $naskah_at
  * @property array|null $snapshots
@@ -48,6 +49,7 @@ class SrikandiSessionSnapshot extends Model
         'finished_at',
         'status',
         'error_code',
+        'error_message',
         'login_at',
         'naskah_at',
         'snapshots',

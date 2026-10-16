@@ -215,6 +215,7 @@ class ClientController extends SrikandiController
             'finished_at' => ['required', 'date', 'after_or_equal:started_at'],
             'status' => ['required', 'string', Rule::in(['success', 'failed'])],
             'error_code' => ['nullable', 'string', 'max:100'],
+            'error_message' => ['nullable', 'string', 'max:2000'],
             'login_at' => ['nullable', 'date'],
             'naskah_at' => ['nullable', 'date'],
             // Boleh kosong (sesi gagal total sebelum panen apa pun).
@@ -242,6 +243,7 @@ class ClientController extends SrikandiController
 
         try {
             $client = $this->resolveClient($slug);
+            $validated['error_message'] = (new ErrorSanitizer)->sanitizeAndTruncate($validated['error_message'] ?? null);
             $snapshot = $this->sessionSnapshots->store($client->slug, $validated);
         } catch (SrikandiException $e) {
             return $this->failure($e);
