@@ -18,11 +18,11 @@
     "require": {
         "php": "^8.3",
         "bale/api": "*",
+        "bale/core": "*",
         "bale/wara": "*",
         "illuminate/contracts": "^11.0||^12.0||^13.0",
         "illuminate/http": "^11.0||^12.0||^13.0",
-        "illuminate/support": "^11.0||^12.0||^13.0",
-        "maatwebsite/excel": "^3.1"
+        "illuminate/support": "^11.0||^12.0||^13.0"
     },
     "autoload": {
         "psr-4": {

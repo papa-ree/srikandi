@@ -3,6 +3,7 @@
 namespace Bale\Srikandi\Exports;
 
 use Bale\Srikandi\Support\OverviewReport;
+use Maatwebsite\Excel\Concerns\Export;
 use Maatwebsite\Excel\Concerns\WithMultipleSheets;
 
 /**
@@ -11,7 +12,7 @@ use Maatwebsite\Excel\Concerns\WithMultipleSheets;
  * Seluruh angka berasal dari `OverviewReport` -- objek yang sama yang dipakai
  * PDF dan halaman. Tidak ada query di kelas ini.
  */
-final class OverviewExport implements WithMultipleSheets
+final class OverviewExport implements Export, WithMultipleSheets
 {
     public function __construct(private readonly OverviewReport $report) {}
 
