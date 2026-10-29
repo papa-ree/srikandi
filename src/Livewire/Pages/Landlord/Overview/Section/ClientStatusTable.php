@@ -41,15 +41,22 @@ class ClientStatusTable extends Component
 
     public string $bulan = '';
 
-    public function mount(string $bulan = ''): void
+    public string $dari = '';
+
+    public string $sampai = '';
+
+    public function mount(string $bulan = '', string $dari = '', string $sampai = ''): void
     {
         $this->authorize('srikandi.client.read');
         $this->bulan = $this->normalizeBulan($bulan);
+        $this->dari = $dari;
+        $this->sampai = $sampai;
     }
 
     public function render()
     {
-        [$start, $end] = $this->bulanTanggalRange($this->bulan);
+        $period = $this->overviewPeriod();
+        [$start, $end] = $period->tanggalRange();
 
         $monthCounts = SrikandiNaskah::query()
             ->whereBetween('tanggal_naskah', [$start, $end])
@@ -79,7 +86,7 @@ class ClientStatusTable extends Component
         ]);
 
         return view('srikandi::livewire.pages.landlord.overview.section.client-status-table', [
-            'bulanLabel' => $this->bulanLabel($this->bulan),
+            'periodeLabel' => $period->label(),
             'rows' => $rows,
             'totalClients' => $rows->count(),
         ]);

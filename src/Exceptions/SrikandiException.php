@@ -58,7 +58,20 @@ class SrikandiException extends RuntimeException
     }
 
     /**
-     * OTP tidak bisa dikirim (device offline, cooldown, dll).
+     * Cooldown anti-ban WhatsApp per nomor belum habis.
+     *
+     * 429 + `retry_after` supaya scraper tahu ini throttle sementara dan
+     * menunggu, bukan memperlakukan device yang sehat sebagai rusak. Dulu
+     * kondisi ini ditahan `usleep` sampai 61 detik dan mematikan request oleh
+     * `max_execution_time`.
+     */
+    public static function otpCooldown(string $message, int $retryAfter): self
+    {
+        return new self($message, 429, 'otp_cooldown', ['retry_after' => $retryAfter]);
+    }
+
+    /**
+     * OTP tidak bisa dikirim (device offline, route belum dipetakan, dll).
      *
      * Kodenya tetap 422 supaya scraper tidak salah menganggap ini throttle.
      */

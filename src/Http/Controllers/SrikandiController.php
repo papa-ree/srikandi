@@ -30,12 +30,20 @@ abstract class SrikandiController extends Controller
      */
     protected function failure(SrikandiException $e): JsonResponse
     {
-        return response()->json([
+        $response = response()->json([
             'ok' => false,
             'state' => $e->context()['state'] ?? null,
             'message' => $e->getMessage(),
             'code' => $e->errorCode(),
         ] + $this->numericContext($e), $e->status());
+
+        $retryAfter = $e->context()['retry_after'] ?? null;
+
+        if (is_int($retryAfter) && $retryAfter > 0) {
+            $response->header('Retry-After', (string) $retryAfter);
+        }
+
+        return $response;
     }
 
     /**
@@ -43,7 +51,7 @@ abstract class SrikandiController extends Controller
      */
     protected function numericContext(SrikandiException $e): array
     {
-        $allowed = ['attempts', 'remaining', 'expected_digits'];
+        $allowed = ['attempts', 'remaining', 'expected_digits', 'retry_after'];
 
         $out = [];
 

@@ -61,7 +61,7 @@
                     {{ __('Tren Naskah') }}
                 </h2>
                 <p class="truncate text-xs text-gray-500 dark:text-gray-400">
-                    {{ __('Naskah masuk & keluar per tanggal naskah · :bulan', ['bulan' => $bulanLabel]) }}
+                    {{ __('Naskah masuk & keluar per tanggal naskah · :periode', ['periode' => $periodeLabel]) }}
                 </p>
             </div>
         </div>
@@ -123,7 +123,7 @@
                     {{ __('Distribusi per Client') }}
                 </h2>
                 <p class="truncate text-xs text-gray-500 dark:text-gray-400">
-                    {{ __('Naskah per sumber · :bulan', ['bulan' => $bulanLabel]) }}
+                    {{ __('Naskah per sumber · :periode', ['periode' => $periodeLabel]) }}
                 </p>
             </div>
         </div>
@@ -160,7 +160,7 @@
                     {{ __('Distribusi Status Baca') }}
                 </h2>
                 <p class="truncate text-xs text-gray-500 dark:text-gray-400">
-                    {{ __('Status baca Srikandi · :bulan', ['bulan' => $bulanLabel]) }}
+                    {{ __('Status baca Srikandi · :periode', ['periode' => $periodeLabel]) }}
                 </p>
             </div>
         </div>
@@ -197,7 +197,7 @@
                     {{ __('Status Tindak Lanjut') }}
                 </h2>
                 <p class="truncate text-xs text-gray-500 dark:text-gray-400">
-                    {{ __('Naskah keluar · :bulan', ['bulan' => $bulanLabel]) }}
+                    {{ __('Naskah keluar · :periode', ['periode' => $periodeLabel]) }}
                 </p>
             </div>
         </div>

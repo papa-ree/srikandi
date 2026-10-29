@@ -33,16 +33,24 @@ class OverviewCharts extends Component
 
     public string $bulan = '';
 
-    public function mount(string $bulan = ''): void
+    public string $dari = '';
+
+    public string $sampai = '';
+
+    public function mount(string $bulan = '', string $dari = '', string $sampai = ''): void
     {
         $this->authorize('srikandi.client.read');
         $this->bulan = $this->normalizeBulan($bulan);
+        $this->dari = $dari;
+        $this->sampai = $sampai;
     }
 
     public function render()
     {
-        [$start, $end] = $this->bulanRange($this->bulan);
-        [$dStart, $dEnd] = $this->bulanTanggalRange($this->bulan);
+        $period = $this->overviewPeriod();
+        $start = $period->start;
+        $end = $period->end;
+        [$dStart, $dEnd] = $period->tanggalRange();
 
         $daily = SrikandiNaskah::query()
             ->whereBetween('tanggal_naskah', [$dStart, $dEnd])
@@ -60,9 +68,11 @@ class OverviewCharts extends Component
         $trendData = [];
         $keluarTrendData = [];
 
-        for ($day = 1; $day <= $start->daysInMonth; $day++) {
-            $key = $start->copy()->day($day)->format('Y-m-d');
-            $trendLabels[] = (string) $day;
+        // 🔴 Iterasi dari tanggal awal ke tanggal akhir PERIODE, bukan 1..jumlah
+        // hari dalam bulan. Mode rentang bisa mulai dan berakhir di tengah bulan.
+        for ($day = $start->copy()->startOfDay(); $day->lessThanOrEqualTo($end); $day->addDay()) {
+            $key = $day->format('Y-m-d');
+            $trendLabels[] = $period->isRange ? $day->format('d M') : (string) $day->day;
             $trendData[] = (int) ($daily[$key] ?? 0);
             $keluarTrendData[] = (int) ($dailyKeluar[$key] ?? 0);
         }
@@ -89,7 +99,7 @@ class OverviewCharts extends Component
             ->get();
 
         return view('srikandi::livewire.pages.landlord.overview.section.overview-charts', [
-            'bulanLabel' => $this->bulanLabel($this->bulan),
+            'periodeLabel' => $period->label(),
             'trendLabels' => $trendLabels,
             'trendData' => $trendData,
             'keluarTrendData' => $keluarTrendData,

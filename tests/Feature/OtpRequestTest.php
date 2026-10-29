@@ -1,6 +1,7 @@
 <?php
 
 use Bale\Srikandi\Models\SrikandiOtpState;
+use Bale\Wara\Support\SendPacer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 
@@ -25,6 +26,31 @@ describe('POST /otp-request (spec §5.1)', function () {
             ->and(SrikandiOtpState::query()->first()->phone)->toBe('628123456789');
 
         Http::assertSent(fn ($r) => str_contains($r->url(), '/send/message'));
+    });
+
+    it('membalas 429 + retry_after saat cooldown WhatsApp belum habis', function () {
+        seedSendableDevice();
+
+        // Cooldown yang tercatat dari pengiriman sebelumnya (mis. notifikasi
+        // ke nomor yang sama) tidak boleh ditunggu 60 detik di dalam request.
+        app(SendPacer::class)->recordSend('628123456789');
+
+        $response = $this->postJson('/api/v1/srikandi/otp-request', [
+            'sumber' => 'default',
+            'phone' => '628123456789',
+        ], asScraper());
+
+        $response->assertStatus(429)
+            ->assertJsonPath('ok', false)
+            ->assertJsonPath('code', 'otp_cooldown');
+
+        $json = $response->json();
+
+        expect($json['retry_after'])->toBeInt()->toBeGreaterThan(0)
+            ->and((int) $response->headers->get('Retry-After'))->toBe($json['retry_after']);
+
+        // Tidak ada pesan yang dikirim: gerbang cooldown menang sebelum gateway.
+        Http::assertNothingSent();
     });
 
     it('IDEMPOTEN: dua kali panggil menghasilkan satu record dan satu pesan', function () {

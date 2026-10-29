@@ -67,8 +67,12 @@
                             </td>
 
                             <td class="px-5 py-3.5">
+                                {{-- 🔴 `@if` tidak boleh di dalam tag komponen: Blade
+                                     menyisipkan PHP ke daftar atribut, tag `<x-core::badge>`
+                                     lalu gagal dikompilasi dan terkirim apa adanya ke
+                                     browser. `:title` bernilai null otomatis dibuang. --}}
                                 <x-core::badge color="{{ $row['status'][1] }}" :label="$row['status'][0]"
-                                    @if ($row['session']?->error_code) title="{{ $row['session']->error_code }}" @endif />
+                                    :title="$row['session']?->error_code" />
                             </td>
 
                             <td class="hidden px-5 py-3.5 lg:table-cell">
@@ -84,7 +88,7 @@
                                     {{ number_format($row['naskah']) }}
                                 </span>
                                 <span class="ml-1 text-xs text-gray-400 dark:text-gray-500">
-                                    {{ $bulanLabel }}
+                                    {{ $periodeLabel }}
                                 </span>
                             </td>
 
@@ -144,7 +148,7 @@
                             </dt>
                             <dd class="mt-0.5 text-base font-bold text-gray-900 dark:text-white">
                                 {{ number_format($row['naskah']) }}
-                                <span class="text-xs font-normal text-gray-400">{{ $bulanLabel }}</span>
+                                <span class="text-xs font-normal text-gray-400">{{ $periodeLabel }}</span>
                             </dd>
                         </div>
 

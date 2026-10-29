@@ -3,6 +3,7 @@
 namespace Bale\Srikandi\Livewire\Pages\Landlord\Overview\Concerns;
 
 use Bale\Srikandi\Models\SrikandiNaskah;
+use Bale\Srikandi\Support\OverviewPeriod;
 use Illuminate\Support\Carbon;
 
 /**
@@ -65,49 +66,18 @@ trait ResolvesBulan
     }
 
     /**
-     * Batas awal & akhir bulan, inklusif dua-duanya.
+     * Periode aktif dari properti `$bulan`, `$dari`, `$sampai`.
      *
-     * @return array{0: Carbon, 1: Carbon}
+     * 🔴 Dipakai halaman dan ketiga section, serta controller export lewat
+     * objek yang sama (`OverviewPeriod`). Batas tanggal tidak boleh dihitung
+     * ulang di tempat lain.
+     *
+     * Trait ini mengasumsikan kelas pemakainya punya ketiga properti tersebut;
+     * halaman dan section Overview memang memilikinya.
      */
-    protected function bulanRange(string $bulan): array
+    protected function overviewPeriod(): OverviewPeriod
     {
-        $start = Carbon::createFromFormat('Y-m-d', $bulan.'-01')->startOfMonth();
-
-        return [$start, $start->copy()->endOfMonth()];
-    }
-
-    /**
-     * Batas bulan untuk `whereBetween` pada kolom DATE seperti `tanggal_naskah`.
-     *
-     * 🔴 Batas bawah tanggal polos (`'Y-m-d'`), batas atas AKHIR HARI.
-     *
-     * Kolom `tanggal_naskah` di-cast `date`, jadi Eloquent menyimpannya sebagai
-     * `'Y-m-d H:i:s'` (mis. `'2026-08-31 00:00:00'`). SQLite membandingkan
-     * string secara leksikografis, dan string yang LEBIH PANJANG dengan awalan
-     * sama dianggap LEBIH BESAR: `'2026-08-31 00:00:00' > '2026-08-31'`. Jadi
-     * batas atas tanggal polos akan MEMBUANG naskah di hari terakhir bulan itu
-     * tanpa error apa pun.
-     *
-     * Batas bawah justru sebaliknya: tanggal polos `'2026-08-01'` cocok baik
-     * untuk nilai ber-jam (`'2026-08-01 00:00:00'`) maupun nilai polos
-     * (`'2026-08-01'`), sedangkan `'2026-08-01 00:00:00'` akan membuang bentuk
-     * polos. Karena itu keduanya tidak boleh diperlakukan sama.
-     *
-     * MySQL tidak terpengaruh (kolom DATE dipotong jadi tengah malam), jadi bug
-     * ini hanya muncul di test -- persis kebalikan dari dugaan.
-     *
-     * @return array{0: string, 1: string}
-     */
-    protected function bulanTanggalRange(string $bulan): array
-    {
-        [$start, $end] = $this->bulanRange($bulan);
-
-        return [$start->toDateString(), $end->toDateTimeString()];
-    }
-
-    protected function bulanLabel(string $bulan): string
-    {
-        return Carbon::createFromFormat('Y-m-d', $bulan.'-01')->format('F Y');
+        return OverviewPeriod::fromQuery($this->bulan, $this->dari ?? null, $this->sampai ?? null);
     }
 
     /**

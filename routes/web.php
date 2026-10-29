@@ -1,5 +1,6 @@
 <?php
 
+use Bale\Srikandi\Http\Controllers\OverviewExportController;
 use Bale\Srikandi\Livewire\Pages\Landlord\Client\Form as ClientForm;
 use Bale\Srikandi\Livewire\Pages\Landlord\Client\Index as ClientIndex;
 use Bale\Srikandi\Livewire\Pages\Landlord\Naskah\Detail as NaskahDetail;
@@ -44,6 +45,19 @@ Route::middleware(['web', 'auth'])->prefix('srikandi')->name('srikandi.')->group
      */
     Route::get('/overview', OverviewIndex::class)
         ->name('overview')
+        ->middleware('can:srikandi.client.read');
+
+    /*
+     * Export Overview: PDF atau XLSX untuk periode yang sama dengan halaman
+     * (`?bulan=` atau `?dari=&sampai=`), bukan periode default.
+     *
+     * 🔴 Permission-nya `srikandi.client.read`, sama dengan halaman. Isinya
+     * data yang sama; menambah permission baru berarti operator yang boleh
+     * melihat halaman justru tidak boleh menyimpan hasilnya.
+     */
+    Route::get('/overview/export/{format}', OverviewExportController::class)
+        ->whereIn('format', ['pdf', 'xlsx'])
+        ->name('overview.export')
         ->middleware('can:srikandi.client.read');
 
     Route::get('/client', ClientIndex::class)

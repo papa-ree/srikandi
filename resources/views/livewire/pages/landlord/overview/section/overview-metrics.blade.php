@@ -4,8 +4,9 @@
     Semua kartu dibangun secara inline (bukan x-core::stat-card) untuk mendukung
     ikon dengan gradient teal-emerald khas Bale.
 
-    🔴 Kartu "Naskah Masuk" dan "Punya Berkas" mengikuti periode terpilih.
-    Kartu "Masih Terlihat" TIDAK -- itu kondisi SEKARANG, bukan angka historic.
+    🔴 Kartu "Naskah Masuk", "Naskah Keluar", "Client Menyetor", dan "Punya
+    Berkas" mengikuti periode terpilih (bulan atau rentang tanggal). Kartu
+    "Masih Terlihat" TIDAK -- itu kondisi SEKARANG, bukan angka historic.
     Mencampur keduanya tanpa label periode akan membuat operator mengira angka
     itu juga ikut tersaring bulan.
 --}}
@@ -18,7 +19,7 @@
                 <x-lucide-files class="size-5 text-white" />
             </div>
             <span class="inline-flex items-center rounded-full bg-teal-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-teal-700 dark:bg-teal-900/30 dark:text-teal-300">
-                {{ $bulanLabel }}
+                {{ $periodeLabel }}
             </span>
         </div>
         <div class="mt-4">
@@ -76,7 +77,7 @@
                 <x-lucide-paperclip class="size-5 text-white" />
             </div>
             <span class="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
-                {{ $bulanLabel }}
+                {{ $periodeLabel }}
             </span>
         </div>
         <div class="mt-4">
@@ -94,7 +95,7 @@
                 <x-lucide-send class="size-5 text-white" />
             </div>
             <span class="inline-flex items-center rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-rose-700 dark:bg-rose-900/30 dark:text-rose-300">
-                {{ $bulanLabel }}
+                {{ $periodeLabel }}
             </span>
         </div>
         <div class="mt-4">

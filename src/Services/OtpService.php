@@ -6,6 +6,7 @@ use Bale\Srikandi\Exceptions\SrikandiException;
 use Bale\Srikandi\Models\SrikandiOtpState;
 use Bale\Srikandi\Support\OtpCode;
 use Bale\Srikandi\Support\OtpPhone;
+use Bale\Wara\Exceptions\CooldownException;
 use Bale\Wara\Exceptions\WaraException;
 use Bale\Wara\Models\WaraRoute;
 use Bale\Wara\Models\WaraSession;
@@ -370,6 +371,25 @@ class OtpService
                     'delivery_error' => $e->getMessage(),
                 ]),
             ])->save();
+
+            // Cooldown bukan kegagalan konfigurasi: device sehat, hanya nomor
+            // tujuan masih dalam jeda anti-ban. 429 + `retry_after` membuat
+            // scraper menunggu, alih-alih menyimpulkan device rusak.
+            if ($e instanceof CooldownException) {
+                Log::warning('Srikandi: OTP ditunda karena cooldown WhatsApp.', [
+                    'state_id' => $state->id,
+                    'retry_after' => $e->retryAfter,
+                ]);
+
+                throw SrikandiException::otpCooldown(
+                    sprintf(
+                        'OTP belum bisa dikirim: cooldown WhatsApp masih %d detik. Ulangi setelah %d detik.',
+                        $e->retryAfter,
+                        $e->retryAfter,
+                    ),
+                    $e->retryAfter,
+                );
+            }
 
             Log::error('Srikandi: gagal mengirim OTP lewat WhatsApp.', [
                 'state_id' => $state->id,
